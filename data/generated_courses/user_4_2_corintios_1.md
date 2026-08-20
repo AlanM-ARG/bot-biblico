@@ -1,0 +1,1 @@
+No cuento con recursos suficientes en la biblioteca para responder esto con precisión. Te sugiero consultarlo directamente con el liderazgo de la congregación.

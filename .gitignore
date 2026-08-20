@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+.venv
+
+# IDEs
+.idea/
+.vscode/
+
+# Logs and Temporaries
+*.log
+data_raw/scratch/
+scratch/
+
+# Local Database (Turso will be used in Production)
+biblico.db
+
+# OCR Binaries (Windows specific, not needed in HF Spaces)
+poppler-26.02.0/
+
+# Raw and Local ETL files (Already processed into vector_db and sqlite)
+pdfs_nuevos/
+pdfs_procesados/
+data/openbible/geocoding_data/
+data/openbible/thumbnails/
+data/openbible/topics_md/
+data/processed/
+vector_db/
+*.zip

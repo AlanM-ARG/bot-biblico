@@ -1,0 +1,1 @@
+Error crítico: todos los proveedores del tier fallaron. Último error: Todos los proveedores del tier 'tier_1_contexto_grande' y el escalón casi-gratis fallaron. Último error: No module named 'openai'

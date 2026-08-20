@@ -1,0 +1,154 @@
+tiers:
+  tier_1_contexto_grande:
+    description: "Guías de estudio, Orquestador de Lentes, Topic Engine, contexto RAG completo"
+    providers:
+      # - name: "ollama-local"
+      #   type: "openai_compatible"
+      #   base_url: "http://localhost:11434/v1"
+      #   api_key_env: "DUMMY_KEY_LOCAL"
+      #   model: "llama3.1"
+      #   max_context_tokens: 1000000
+      #   is_aggregator: false
+
+      - name: "gemini-3.6-flash"
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model: "gemini-3.6-flash"
+        max_context_tokens: 1000000
+        is_aggregator: false
+
+      - name: "gemini-3.7-flash"
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model: "gemini-3.7-flash"
+        max_context_tokens: 1000000
+        is_aggregator: false
+
+      # - name: "eden-ai-gemma4"
+      #   type: "eden_ai"
+      #   api_key_env: "EDEN_AI_API_KEY"
+      #   model: "google/gemma-4"
+      #   max_context_tokens: 8192
+      #   is_aggregator: true
+
+  tier_2_disponibilidad:
+    description: "Conversacionales cortos, Evangelismo, Hermenéutico, bajo contexto"
+    providers:
+      - name: "groq-gpt-oss-120b"
+        type: "openai_compatible"
+        base_url: "https://api.groq.com/openai/v1"
+        api_key_env: "GROQ_API_KEY"
+        model: "openai/gpt-oss-120b"
+        max_context_tokens: 131000
+        is_aggregator: false
+
+      - name: "groq-qwen-27b"
+        type: "openai_compatible"
+        base_url: "https://api.groq.com/openai/v1"
+        api_key_env: "GROQ_API_KEY"
+        model: "qwen/qwen3.6-27b"
+        max_context_tokens: 131000
+        is_aggregator: false
+
+      - name: "groq-gpt-oss-20b"
+        type: "openai_compatible"
+        base_url: "https://api.groq.com/openai/v1"
+        api_key_env: "GROQ_API_KEY"
+        model: "openai/gpt-oss-20b"
+        max_context_tokens: 131000
+        is_aggregator: false
+
+      - name: "groq-gpt-oss-safeguard-20b"
+        type: "openai_compatible"
+        base_url: "https://api.groq.com/openai/v1"
+        api_key_env: "GROQ_API_KEY"
+        model: "openai/gpt-oss-safeguard-20b"
+        max_context_tokens: 131000
+        is_aggregator: false
+
+      - name: "mistral"
+        type: "openai_compatible"
+        base_url: "https://api.mistral.ai/v1"
+        api_key_env: "MISTRAL_API_KEY"
+        model: "mistral-small-latest"
+        max_context_tokens: 32000
+        is_aggregator: false
+
+      - name: "openrouter"
+        type: "openai_compatible"
+        base_url: "https://openrouter.ai/api/v1"
+        api_key_env: "OPENROUTER_API_KEY"
+        model: "meta-llama/llama-3.3-70b-instruct:free"
+        max_context_tokens: 131000
+        is_aggregator: true
+
+      - name: "zai"
+        type: "openai_compatible"
+        base_url: "https://open.bigmodel.cn/api/paas/v4"
+        api_key_env: "ZAI_API_KEY"
+        model: "glm-4-flash"
+        max_context_tokens: 128000
+        is_aggregator: true
+
+  tier_3_tareas_cortas:
+    description: "SOLO prompts <8K tokens: clasificación ETL, resúmenes de una línea"
+    providers:
+      - name: "ollama-local"
+        type: "openai_compatible"
+        base_url: "http://localhost:11434/v1"
+        api_key_env: "DUMMY_KEY_LOCAL"
+        model: "llama3.1"
+        max_context_tokens: 8000
+        is_aggregator: false
+
+      - name: "cerebras"
+        type: "openai_compatible"
+        base_url: "https://api.cerebras.ai/v1"
+        api_key_env: "CEREBRAS_API_KEY"
+        model: "llama-3.3-70b"
+        max_context_tokens: 8000
+        is_aggregator: false
+
+  escalon_casi_gratis:
+    description: "Seguro de bajo costo cuando TODO el tier gratuito falla en el día"
+    providers:
+      - name: "deepseek"
+        type: "openai_compatible"
+        base_url: "https://api.deepseek.com/v1"
+        api_key_env: "DEEPSEEK_API_KEY"
+        model: "deepseek-chat"
+        max_context_tokens: 128000
+        is_aggregator: false
+
+  tier_4_local:
+    description: "Fallback final usando modelos locales si no hay internet o fallan todos los proveedores cloud"
+    providers:
+      - name: "ollama-local"
+        type: "openai_compatible"
+        base_url: "http://localhost:11434/v1"
+        api_key_env: "DUMMY_KEY_LOCAL"
+        model: "llama3.1"
+        max_context_tokens: 8000
+        is_aggregator: false
+
+# Mapeo módulo → tier
+task_tier_map:
+  study_guide: "tier_1_contexto_grande"
+  topic_study: "tier_1_contexto_grande"
+  roadmap_generator: "tier_1_contexto_grande"
+  family_devotional: "tier_1_contexto_grande"
+  life_alert: "tier_1_contexto_grande"
+  propositional_analysis: "tier_1_contexto_grande"
+  exegetical_panel: "tier_1_contexto_grande"
+  chat_evangelism: "tier_2_disponibilidad"
+  evaluate_evangelism: "tier_2_disponibilidad"
+  hermeneutic_challenge: "tier_2_disponibilidad"
+  hermeneutic_evaluation: "tier_2_disponibilidad"
+  cron_discord_reminder: "tier_2_disponibilidad"
+  etl_classify: "tier_3_tareas_cortas"
+  etl_summarize: "tier_3_tareas_cortas"
+
+# Módulos que manejan datos privados (nunca enrutar a agregadores)
+private_data_modules:
+  - "life_alert"
+  - "family_devotional"

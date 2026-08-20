@@ -1,0 +1,141 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* --- GLOBAL FONT --- */
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif !important;
+}
+
+/* --- STREAMLIT NATIVE UI --- */
+/* El menú principal de opciones de Streamlit permanece visible */
+footer {
+    visibility: hidden;
+}
+
+/* --- ADJUST MAIN PADDING (Desktop Default) --- */
+.block-container {
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+    padding-left: 3rem !important;
+    padding-right: 3rem !important;
+    max-width: 1200px !important;
+}
+
+/* --- RESPONSIVE MEDIA QUERIES --- */
+/* Tablets (Portrait) & Smaller Laptops */
+@media screen and (max-width: 1024px) {
+    .block-container {
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+    }
+}
+
+/* Mobile Phones (iPhone Mini, A53, etc.) */
+@media screen and (max-width: 768px) {
+    .block-container {
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
+        padding-top: 1.5rem !important;
+    }
+    
+    h1 { font-size: 1.8rem !important; }
+    h2 { font-size: 1.4rem !important; }
+    h3 { font-size: 1.2rem !important; }
+    
+    /* Make buttons full width on small screens if they are in columns */
+    button[kind="primary"], button[kind="secondary"] {
+        width: 100% !important;
+    }
+}
+
+/* --- BUTTON STYLING --- */
+button[kind="secondary"] {
+    border-radius: 8px !important;
+    transition: all 0.2s ease-in-out !important;
+    border-color: rgba(150, 150, 150, 0.3) !important;
+}
+button[kind="secondary"]:hover {
+    border-color: rgba(150, 150, 150, 0.6) !important;
+    background-color: rgba(150, 150, 150, 0.1) !important;
+}
+
+button[kind="primary"] {
+    border-radius: 8px !important;
+    transition: all 0.2s ease-in-out !important;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+}
+button[kind="primary"]:hover {
+    box-shadow: 0 6px 8px rgba(0,0,0,0.15) !important;
+    transform: translateY(-1px);
+}
+
+/* --- SIDEBAR STYLING --- */
+[data-testid="stSidebar"] {
+    /* Removed hardcoded background color to respect user theme */
+    border-right: 1px solid rgba(150, 150, 150, 0.2) !important;
+}
+[data-testid="stSidebar"] .block-container {
+    padding-top: 2rem !important;
+}
+
+/* --- INPUT FIELDS --- */
+input, textarea, select, .stSelectbox > div > div > div {
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    transition: border-color 0.2s ease-in-out !important;
+}
+
+/* --- TABS --- */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 24px;
+}
+.stTabs [data-baseweb="tab"] {
+    height: 50px;
+    white-space: pre-wrap;
+    background-color: transparent;
+    border-radius: 4px 4px 0px 0px;
+    gap: 1px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+.stTabs [aria-selected="true"] {
+    background-color: transparent !important;
+}
+
+/* --- CARDS / EXPANDERS --- */
+[data-testid="stExpander"] {
+    border-radius: 8px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+}
+
+/* --- HEADERS --- */
+h1 {
+    font-weight: 700 !important;
+    letter-spacing: -0.02em !important;
+}
+h2 {
+    font-weight: 600 !important;
+    letter-spacing: -0.01em !important;
+}
+h3 {
+    font-weight: 500 !important;
+}
+
+/* Markdown tables */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+}
+th {
+    background-color: rgba(150, 150, 150, 0.1);
+    text-align: left;
+    font-weight: 600;
+}
+td, th {
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(150, 150, 150, 0.2);
+}
+tr:last-child td {
+    border-bottom: none;
+}

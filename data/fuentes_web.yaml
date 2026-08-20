@@ -1,0 +1,32 @@
+sources:
+  - id: tgc_articulos
+    name: "Coalición por el Evangelio"
+    base_url: "https://www.coalicionporelevangelio.org"
+    start_url: "https://www.coalicionporelevangelio.org/articulos/"
+    seed_urls:
+      - "https://www.coalicionporelevangelio.org/articulo/mejorar-cuerpo-sin-obsesionarse-imagen/"
+      - "https://www.coalicionporelevangelio.org/articulo/cuerpo-moldea-alma/"
+      - "https://www.coalicionporelevangelio.org/articulo/por-que-leer-la-biblia/"
+    content_type: "articulo"
+    category: "teología pastoral"
+    has_sitemap: false
+
+  - id: 9marks_articulos
+    name: "9Marcas"
+    base_url: "https://es.9marks.org"
+    start_url: "https://es.9marks.org/"
+    seed_urls:
+      - "https://es.9marks.org/articulo/por-que-deberiamos-preocuparnos-por-la-membresia-de-la-iglesia/"
+      - "https://es.9marks.org/articulo/la-disciplina-de-la-iglesia-como-deberia-ser/"
+      - "https://es.9marks.org/articulo/que-es-el-discipulado/"
+    content_type: "articulo"
+    category: "eclesiología"
+    has_sitemap: false
+
+  - id: chapel_library_es
+    name: "Chapel Library"
+    base_url: "https://www.chapellibrary.org"
+    start_url: "https://www.chapellibrary.org/literature/spanish"
+    content_type: "articulo"
+    category: "teología histórica"
+    has_sitemap: false
