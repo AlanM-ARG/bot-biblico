@@ -82,6 +82,65 @@ class SchedulerService:
         except ImportError as e:
             print(f"[SchedulerService] Error al importar trigger_discord_reminder: {e}. Tarea omitida.")
 
+        # =========================================================================
+        # AUTOMATIZACIÓN DE FEEDBACK Y EVALUACIÓN RAG
+        # =========================================================================
+        # Los barridos automatizados (30 y 60 min) fueron deshabilitados por pedido 
+        # del usuario. Ahora se ejecutarán manualmente desde el Panel de Administración.
+
+    def _run_feedback_analyzer_sweep(self):
+        """Revisa periódicamente feedback_beta para procesar penalizaciones doctrinales."""
+        try:
+            from services.feedback_analyzer import FeedbackAnalyzer
+            analyzer = FeedbackAnalyzer()
+            res = analyzer.process_doctrinal_penalties()
+            if res.get("documentos_purgados"):
+                print(f"[SchedulerService] 🛡️ Documentos purgados por desviación doctrinal: {res['documentos_purgados']}")
+        except Exception as e:
+            print(f"[SchedulerService] Error en feedback_analyzer_sweep: {e}")
+
+    def _run_evaluator_sweep(self):
+        """Evalúa interacciones RAG pendientes para detectar vacíos de cobertura y actualizar auto-backlog."""
+        try:
+            import json
+            from database.connection import get_connection
+            from services.rag_evaluator import RAGEvaluatorService
+
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT r.id, r.query, r.module, r.sources_used
+                FROM rag_interactions r
+                LEFT JOIN rag_evaluations e ON r.id = e.interaction_id
+                WHERE e.id IS NULL
+                ORDER BY r.timestamp DESC
+                LIMIT 5
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+
+            if rows:
+                evaluator = RAGEvaluatorService()
+                for row in rows:
+                    inter_id = row["id"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
+                    query = row["query"] if isinstance(row, dict) or hasattr(row, "keys") else row[1]
+                    module = row["module"] if isinstance(row, dict) or hasattr(row, "keys") else row[2]
+                    sources_raw = row["sources_used"] if isinstance(row, dict) or hasattr(row, "keys") else row[3]
+                    try:
+                        sources = json.loads(sources_raw) if sources_raw else []
+                    except Exception:
+                        sources = []
+
+                    evaluator.evaluate_interaction(
+                        query=query,
+                        response_text="",
+                        retrieved_chunks=sources,
+                        interaction_id=inter_id,
+                        module=module or "general"
+                    )
+        except Exception as e:
+            print(f"[SchedulerService] Error en rag_evaluator_sweep: {e}")
+
     def start(self):
         if not self.scheduler.running:
             self.scheduler.start()

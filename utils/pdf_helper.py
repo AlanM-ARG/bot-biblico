@@ -5,7 +5,16 @@ import io
 def generar_pdf_desde_markdown(texto_md):
     """
     Convierte texto Markdown a un archivo PDF en memoria.
+    Acepta tanto un string de texto como un objeto RAGResponse.
     """
+    if hasattr(texto_md, 'content'):
+        texto_md = texto_md.content
+    elif not isinstance(texto_md, str):
+        texto_md = str(texto_md or "")
+
+    if not texto_md or not texto_md.strip():
+        return None
+
     # 1. Convertir Markdown a HTML
     html_content = markdown.markdown(texto_md, extensions=['tables', 'fenced_code'])
     

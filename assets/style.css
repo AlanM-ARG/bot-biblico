@@ -45,6 +45,49 @@ footer {
     button[kind="primary"], button[kind="secondary"] {
         width: 100% !important;
     }
+
+    /* Force Streamlit columns to stack vertically on mobile */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+    }
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
+
+    /* Prevent text from overflowing horizontally (the Bible verse bug) */
+    [data-testid="stMarkdownContainer"] {
+        overflow-x: auto !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+    }
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] li,
+    [data-testid="stMarkdownContainer"] blockquote {
+        word-break: break-word !important;
+        overflow-wrap: break-word !important;
+        max-width: 100% !important;
+    }
+    /* Bible reader container: scrollable instead of overflowing */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+    }
+
+    /* Make tabs horizontally scrollable instead of wrapping awkwardly */
+    .stTabs [data-baseweb="tab-list"] {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        -webkit-overflow-scrolling: touch;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 0.85rem !important;
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+        white-space: nowrap !important;
+    }
 }
 
 /* --- BUTTON STYLING --- */
@@ -120,22 +163,22 @@ h3 {
     font-weight: 500 !important;
 }
 
-/* Markdown tables */
-table {
+/* Markdown tables (exclude calendar) */
+table:not(.cal-table) {
     border-collapse: collapse;
     width: 100%;
     border-radius: 8px;
     overflow: hidden;
 }
-th {
+th:not(.cal-table th) {
     background-color: rgba(150, 150, 150, 0.1);
     text-align: left;
     font-weight: 600;
 }
-td, th {
+td:not(.cal-table td), th:not(.cal-table th) {
     padding: 12px 15px;
     border-bottom: 1px solid rgba(150, 150, 150, 0.2);
 }
-tr:last-child td {
+tr:not(.cal-table tr):last-child td:not(.cal-table td) {
     border-bottom: none;
 }

@@ -24,27 +24,13 @@ from dotenv import load_dotenv
 # Cargar variables de entorno (como GEMINI_API_KEY)
 load_dotenv()
 
-# --- Descarga de Base Vectorial (Solo Producción) ---
-if os.environ.get("TURSO_DATABASE_URL"):
-    try:
-        from huggingface_hub import snapshot_download
-        print("Descargando vector_db desde Hugging Face Datasets...")
-        snapshot_download(
-            repo_id="alanmarg/bot-biblico-vectordb", 
-            repo_type="dataset", 
-            local_dir="vector_db",
-            token=os.environ.get("HF_TOKEN") # Asegúrate de tener este secret configurado
-        )
-        print("vector_db descargada exitosamente.")
-    except Exception as e:
-        print(f"Error descargando vector_db: {e}")
-
 from database.connection import init_db
 from repositories.user_repository import UserRepository
-from ui import login, dashboard, study_screen, topic_engine, library, chat_screen, evangelism_screen, logs_panel, hermeneutic_gym, roadmaps
+from ui import login, dashboard, study_screen, topic_engine, library, chat_screen, evangelism_screen, logs_panel, hermeneutic_gym, roadmaps, admin_panel
 from repositories.feedback_repository import FeedbackRepository
 from models.feedback import Feedback
 from services.scheduler_service import SchedulerService
+from core.constants import ADMIN_USERS
 
 # Initialize database
 init_db()
@@ -59,7 +45,7 @@ def init_background_jobs():
 init_background_jobs()
 
 # Page config
-st.set_page_config(page_title="Aplicativo Bíblico", page_icon="📖", layout="wide")
+st.set_page_config(page_title="Teos AI", page_icon="📖", layout="wide")
 
 # Inject custom UI styling
 from utils.ui_helper import inject_custom_css
@@ -76,7 +62,14 @@ if st.session_state['user_id'] is None:
 else:
     st.sidebar.title(f"Hola, {st.session_state.get('usuario_actual', 'Peregrino')}")
     
-    page = st.sidebar.radio("Ir a", ["Dashboard del Peregrino", "💬 Chat Exegético", "Buscador Temático", "Pantalla de Estudio", "Biblioteca", "⚔️ Simulador Evangelismo", "🏋️ Gimnasio Hermenéutico", "🗺️ Roadmaps de Estudio", "📊 Logs (RAG)"])
+    is_admin = st.session_state.get('usuario_actual') in ADMIN_USERS
+    
+    pages = ["Dashboard del Peregrino", "💬 Chat Exegético", "Buscador Temático", "Pantalla de Estudio", "Biblioteca", "⚔️ Simulador Evangelismo", "🏋️ Gimnasio Hermenéutico", "🗺️ Roadmaps de Estudio"]
+    if is_admin:
+        pages.append("📊 Logs (RAG)")
+        pages.append("🛠️ Panel de Administración")
+        
+    page = st.sidebar.radio("Ir a", pages)
     
     if st.sidebar.button("🚪 Cerrar Sesión"):
         st.session_state['user_id'] = None
@@ -102,6 +95,8 @@ else:
         roadmaps.render(st.session_state['user_id'])
     elif page == "📊 Logs (RAG)":
         logs_panel.render(st.session_state['user_id'])
+    elif page == "🛠️ Panel de Administración":
+        admin_panel.render(st.session_state['user_id'])
 
     # --- Configuración de Usuario ---
     st.sidebar.divider()
@@ -142,36 +137,8 @@ else:
                     st.success("Contexto actualizado.")
                     st.rerun()
 
-    st.sidebar.divider()
-    st.sidebar.subheader("🛠️ Mantenimiento")
-    
-    if st.sidebar.button("⚡ Sincronizar Nuevos Archivos", type="primary", help="Procesa y añade únicamente los archivos que no han sido indexados."):
-        from services.etl_processor import sincronizar_nuevos_archivos
-        with st.spinner("Convirtiendo PDFs con Nougat e indexando vectores..."):
-            sincronizar_nuevos_archivos()
-        st.sidebar.success("Recursos nuevos sincronizados correctamente.")
+    # --- Configuración de Usuario ---
 
-    if st.sidebar.button("🛡️ Auditoría Doctrinal a Lotes", help="Cruza recursos pendientes contra la Confesión de 1689."):
-        with st.spinner("Ejecutando auditoría con IA... esto puede demorar varios minutos."):
-            from scripts.auditor_doctrinal import AuditorDoctrinal
-            auditor = AuditorDoctrinal()
-            archivos = auditor.run_audit_batch()
-            st.sidebar.success(f"¡Auditoría completada! {len(archivos)} evaluados.")
-
-    if st.sidebar.button("⚠️ Reconstruir Biblioteca Completa", help="Purga toda la base de datos y reprocesa todos los archivos desde cero. Usar solo si hay errores."):
-        from services.etl_processor import forzar_reprocesamiento_total
-        with st.spinner("Reconstruyendo biblioteca completa para Usuario_Prueba... Esto puede tomar varios minutos."):
-            forzar_reprocesamiento_total()
-        st.sidebar.success("Contexto RAG reconstruido desde cero.")
-
-    if st.sidebar.button("🔔 Enviar Recordatorio (Discord)"):
-        from cron_reminders import trigger_discord_reminder
-        with st.spinner("Generando y enviando recordatorio..."):
-            success = trigger_discord_reminder()
-        if success:
-            st.sidebar.success("✅ ¡Recordatorio enviado al canal!")
-        else:
-            st.sidebar.error("❌ Faltó configurar DISCORD_WEBHOOK_URL en .env")
 
     # --- Feedback Beta Module in Sidebar ---
     st.sidebar.divider()

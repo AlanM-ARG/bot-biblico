@@ -14,6 +14,7 @@ class RAGResponse:
     fallback_no_rag: bool = False
     recommended_resources: list = field(default_factory=list)
     missing_topics: list = field(default_factory=list)
+    interaction_id: Optional[str] = None
 
     @staticmethod
     def parse(raw_text: str, query_topic: str = None) -> 'RAGResponse':
@@ -126,6 +127,7 @@ class RAGResponse:
         fallback_no_rag = data.get("fallback_no_rag", False)
         recommended_resources = data.get("recommended_resources", [])
         missing_topics = data.get("missing_topics", [])
+        interaction_id = data.get("interaction_id", None)
         
         # Defensive validation of sources_used
         if not sources_used:
@@ -140,5 +142,6 @@ class RAGResponse:
             sources_used=sources_used,
             fallback_no_rag=fallback_no_rag,
             recommended_resources=recommended_resources,
-            missing_topics=missing_topics
+            missing_topics=missing_topics,
+            interaction_id=interaction_id
         )

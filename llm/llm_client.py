@@ -15,6 +15,9 @@ import time
 import logging
 import traceback
 from dataclasses import dataclass, field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 

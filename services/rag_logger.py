@@ -28,6 +28,7 @@ class RAGLogEntry:
     tier_used: str = ""  # "tier_1_contexto_grande", "escalon_casi_gratis", etc.
     providers_attempted: list = field(default_factory=list)  # [{name, success, error, latency_ms}]
     private_data_flag: bool = False
+    interaction_id: str = ""
 
 
 LOG_DIR = os.path.join("data", "logs")

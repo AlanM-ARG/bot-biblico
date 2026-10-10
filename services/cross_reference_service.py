@@ -1,19 +1,19 @@
 import os
-import chromadb
-from sentence_transformers import SentenceTransformer
 from repositories.resource_repository import ResourceRepository
+from core.embeddings import get_encoder
+from core.vector_db import get_collection
 
 class CrossReferenceService:
     def __init__(self, use_ephemeral_db=False):
         self.repo = ResourceRepository()
-        self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
+        self.encoder = get_encoder()
         
         if use_ephemeral_db:
+            import chromadb
             self.db_client = chromadb.EphemeralClient()
+            self.collection = self.db_client.get_or_create_collection(name="biblico_collection")
         else:
-            self.db_client = chromadb.PersistentClient(path="vector_db")
-            
-        self.collection = self.db_client.get_or_create_collection(name="biblico_collection")
+            self.collection = get_collection()
 
     def get_related_resources(self, query: str, limit: int = 3) -> list:
         """

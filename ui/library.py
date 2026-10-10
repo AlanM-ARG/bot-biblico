@@ -5,19 +5,23 @@ import tempfile
 from services.resource_service import ResourceService
 from services.vector_service import VectorService
 from database.connection import DB_PATH
+from core.constants import ADMIN_USERS
 
 def render(user_id: int):
     st.title("📚 Biblioteca y Auditoría")
     
+    is_admin = st.session_state.get('usuario_actual') in ADMIN_USERS
+    
     col_upload, col_audit = st.columns([7, 3])
     with col_audit:
-        if st.button("🛡️ Ejecutar Auditoría Doctrinal a Lotes", use_container_width=True):
-            with st.spinner("Ejecutando auditoría con IA... esto puede demorar varios minutos."):
-                from scripts.auditor_doctrinal import AuditorDoctrinal
-                auditor = AuditorDoctrinal()
-                archivos = auditor.run_audit_batch()
-                st.success(f"¡Auditoría completada! Se evaluaron {len(archivos)} recursos nuevos.")
-                st.rerun()
+        if is_admin:
+            if st.button("🛡️ Ejecutar Auditoría Doctrinal a Lotes", use_container_width=True):
+                with st.spinner("Ejecutando auditoría con IA... esto puede demorar varios minutos."):
+                    from scripts.auditor_doctrinal import AuditorDoctrinal
+                    auditor = AuditorDoctrinal()
+                    archivos = auditor.run_audit_batch()
+                    st.success(f"¡Auditoría completada! Se evaluaron {len(archivos)} recursos nuevos.")
+                    st.rerun()
 
     tab_upload, tab_audit_ok, tab_audit_wait, tab_backlog = st.tabs([
         "⬆️ Subir Recurso", 
@@ -28,39 +32,43 @@ def render(user_id: int):
     
     with tab_upload:
         st.markdown("Sube tus recursos (Markdown o Audio) para inyectarlos en la inteligencia del aplicativo.")
-        uploaded_file = st.file_uploader("Sube un archivo (.md, .mp3, .wav)", type=["md", "mp3", "wav", "m4a"])
         
-        if st.button("Procesar Archivo"):
-            if uploaded_file is not None:
-                with st.spinner("Procesando archivo... Si es audio, Whisper está transcribiendo."):
-                    suffix = os.path.splitext(uploaded_file.name)[1]
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                        tmp.write(uploaded_file.getvalue())
-                        tmp_path = tmp.name
-                        
-                    try:
-                        resource_svc = ResourceService()
-                        resource = resource_svc.ingest_file(tmp_path)
-                        
-                        if not resource:
-                            st.error("Error al ingerir el recurso.")
-                        else:
-                            st.success(f"Recurso guardado en DB (ID: {resource.id})")
+        if not is_admin:
+            st.warning("Solo los administradores pueden subir nuevos recursos a la biblioteca global.")
+        else:
+            uploaded_file = st.file_uploader("Sube un archivo (.md, .mp3, .wav)", type=["md", "mp3", "wav", "m4a"])
+            
+            if st.button("Procesar Archivo"):
+                if uploaded_file is not None:
+                    with st.spinner("Procesando archivo... Si es audio, Whisper está transcribiendo."):
+                        suffix = os.path.splitext(uploaded_file.name)[1]
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                            tmp.write(uploaded_file.getvalue())
+                            tmp_path = tmp.name
                             
-                            st.info("Vectorizando recurso en ChromaDB...")
-                            vector_svc = VectorService()
-                            success = vector_svc.vectorize_resource(resource)
+                        try:
+                            resource_svc = ResourceService()
+                            resource = resource_svc.ingest_file(tmp_path)
                             
-                            if success:
-                                st.success("¡Recurso inyectado al Cerebro exitosamente! Caché invalidada.")
+                            if not resource:
+                                st.error("Error al ingerir el recurso.")
                             else:
-                                st.warning("El recurso se guardó pero no pudo ser vectorizado.")
-                    except Exception as e:
-                        st.error(f"Ocurrió un error: {e}")
-                    finally:
-                        os.unlink(tmp_path)
-            else:
-                st.warning("Por favor sube un archivo primero.")
+                                st.success(f"Recurso guardado en DB (ID: {resource.id})")
+                                
+                                st.info("Vectorizando recurso en ChromaDB...")
+                                vector_svc = VectorService()
+                                success = vector_svc.vectorize_resource(resource)
+                                
+                                if success:
+                                    st.success("¡Recurso inyectado al Cerebro exitosamente! Caché invalidada.")
+                                else:
+                                    st.warning("El recurso se guardó pero no pudo ser vectorizado.")
+                        except Exception as e:
+                            st.error(f"Ocurrió un error: {e}")
+                        finally:
+                            os.unlink(tmp_path)
+                else:
+                    st.warning("Por favor sube un archivo primero.")
 
     # --- Fetch Data for Audit and Backlog ---
     conn = sqlite3.connect(DB_PATH)
@@ -104,7 +112,7 @@ def render(user_id: int):
         for tema, motivo, tipo, estado in temas_filas:
             with st.expander(f"📌 [{tipo}] {tema} - Estado: {estado}"):
                 st.write(f"**Motivo de carencia detectada:** {motivo}")
-                if estado != 'Completado':
+                if estado != 'Completado' and is_admin:
                     if st.button(f"Generar Guía Automática para {tema}", key=f"gen_{tema}"):
                         with st.spinner("🤖 El Agente Arquitecto está redactando el recurso basándose en su conocimiento teológico. Por favor espera..."):
                             from services.rag_service import RAGService

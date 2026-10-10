@@ -1,28 +1,30 @@
 import os
 import re
-import chromadb
-from sentence_transformers import SentenceTransformer
 from models.resource import Resource
 from repositories.resource_repository import ResourceRepository
 from repositories.cache_audit_repository import CacheAuditRepository
+from core.embeddings import get_encoder
+from core.vector_db import get_chroma_client, get_collection
+from services.graph_service import GraphService
 
 class VectorService:
     def __init__(self, use_ephemeral=False):
         self.repo = ResourceRepository()
         self.cache_repo = CacheAuditRepository()
         
-        # Initialize Embedding Model
-        # We use a fast, lightweight local model ideal for semantic search
-        self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
+        # Shared embedding model singleton
+        self.encoder = get_encoder()
         
-        # Initialize ChromaDB
+        # Shared ChromaDB client singleton
         if use_ephemeral:
+            import chromadb
             self.client = chromadb.EphemeralClient()
+            self.collection = self.client.get_or_create_collection(name="biblico_collection")
         else:
-            os.makedirs("vector_db", exist_ok=True)
-            self.client = chromadb.PersistentClient(path="vector_db")
+            self.client = get_chroma_client()
+            self.collection = get_collection()
             
-        self.collection = self.client.get_or_create_collection(name="biblico_collection")
+        self.graph_service = GraphService()
 
     def _strip_frontmatter(self, content: str) -> str:
         """Removes the YAML frontmatter from a markdown file."""
@@ -214,4 +216,44 @@ class VectorService:
             
         print(f"✅ {resource.filename}: {len(chunks)} fragmentos semánticos vectorizados.")
         return True
+
+    def delete_document_vectors(self, doc_identifier: str) -> bool:
+        """
+        Elimina todos los vectores asociados a un documento por resource_id, filename o ID.
+        Utilizado para purgar automáticamente vectores cuando un documento es degradado doctrinalmente.
+        """
+        try:
+            # 1. Intento por resource_id numérico
+            try:
+                res_id_int = int(doc_identifier)
+                self.collection.delete(where={"resource_id": res_id_int})
+                self.cache_repo.invalidate_all()
+                print(f"🗑️ Chunks eliminados de ChromaDB para resource_id={res_id_int}")
+                return True
+            except (ValueError, Exception):
+                pass
+
+            # 2. Intento por metadato filename
+            try:
+                self.collection.delete(where={"filename": str(doc_identifier)})
+                self.cache_repo.invalidate_all()
+                print(f"🗑️ Chunks eliminados de ChromaDB para filename={doc_identifier}")
+                return True
+            except Exception:
+                pass
+
+            # 3. Búsqueda por coincidencia en IDs de ChromaDB
+            records = self.collection.get()
+            if records and "ids" in records:
+                matching_ids = [cid for cid in records["ids"] if str(doc_identifier) in cid]
+                if matching_ids:
+                    self.collection.delete(ids=matching_ids)
+                    self.cache_repo.invalidate_all()
+                    print(f"🗑️ {len(matching_ids)} chunks eliminados de ChromaDB para {doc_identifier}")
+                    return True
+
+            return False
+        except Exception as e:
+            print(f"⚠️ Error al eliminar vectores de ChromaDB para {doc_identifier}: {e}")
+            return False
 

@@ -31,3 +31,7 @@ data/openbible/topics_md/
 data/processed/
 vector_db/
 *.zip
+
+# User / Personal Files
+Planilla_Arbitraje_Alan.xlsx
+*.xlsx

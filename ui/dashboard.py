@@ -47,25 +47,64 @@ def render(user_id: int):
         cm2.metric("📅 Lecturas este mes", f"{lecturas_mes}")
         st.write("") # spacing
         
-        # Render visual grid dynamically (Responsive Flexbox instead of st.columns)
-        days = list(heatmap.items())
-        days.reverse() # chronological order
+        # --- FullCalendar View (same component as Roadmaps) ---
+        from streamlit_calendar import calendar as st_calendar
         
-        heatmap_html = """
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(35px, 1fr)); gap: 6px; margin-bottom: 20px;">
-        """
+        year, month = today.year, today.month
         
-        for day_str, score in days:
-            if score == 0: color = "#ebedf0"
-            elif score == 1: color = "#9be9a8"
-            elif score == 2: color = "#40c463"
-            elif score == 3: color = "#30a14e"
-            else: color = "#216e39"
+        # Fetch all habits for the current month
+        first_day = date(year, month, 1)
+        if month == 12:
+            last_day = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = date(year, month + 1, 1) - timedelta(days=1)
+        
+        calendar_events = []
+        for i in range((last_day - first_day).days + 1):
+            d = first_day + timedelta(days=i)
+            h = habit_repo.get_habit(user_id, d)
+            if h:
+                items = []
+                if h.bible_reading: items.append("📖")
+                if h.prayer: items.append("🙏")
+                if h.meditation: items.append("🤔")
+                if h.family_worship: items.append("👨‍👩‍👧")
+                score = len(items)
                 
-            heatmap_html += f'<div style="background-color: {color}; height: 35px; border-radius: 4px;" title="{day_str} (Score: {score})"></div>'
-            
-        heatmap_html += "</div>"
-        st.markdown(heatmap_html, unsafe_allow_html=True)
+                if score > 0:
+                    if score == 1: color = "#9be9a8"
+                    elif score == 2: color = "#40c463"
+                    elif score == 3: color = "#30a14e"
+                    else: color = "#216e39"
+                    
+                    calendar_events.append({
+                        "title": " ".join(items),
+                        "start": d.strftime("%Y-%m-%d"),
+                        "end": d.strftime("%Y-%m-%d"),
+                        "color": color,
+                    })
+
+        calendar_options = {
+            "headerToolbar": {
+                "left": "today prev,next",
+                "center": "title",
+                "right": "",
+            },
+            "initialView": "dayGridMonth",
+            "initialDate": today.strftime("%Y-%m-%d"),
+            "locale": "es",
+            "height": 420,
+        }
+
+        custom_css = """
+            .fc-event-time { display: none; }
+            .fc-event-title { font-size: 0.85rem; }
+            .fc-toolbar-title { font-size: 1.2rem !important; }
+            .fc-daygrid-day-number { font-size: 0.85rem; }
+            .fc-day-today { background-color: rgba(74, 158, 255, 0.08) !important; }
+        """
+
+        st_calendar(events=calendar_events, options=calendar_options, custom_css=custom_css, key="habit_calendar")
         
         st.divider()
         st.subheader("Registro de Hoy")

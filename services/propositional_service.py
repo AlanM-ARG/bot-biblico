@@ -1,5 +1,4 @@
 import re
-import requests
 import os
 
 # Diccionario de género literario por libro bíblico
@@ -56,15 +55,15 @@ GENRE_MAP = {
 class PropositionalService:
     """
     Servicio para formatear texto bíblico en 'Modo Julián' (Análisis Proposicional).
-    Utiliza un LLM local (Ollama) para realizar un análisis gramatical inteligente.
-    Si Ollama no está disponible, hace un fallback a reglas basadas en expresiones regulares.
+    Utiliza el TierRouter para enrutar llamadas LLM con fallback automático.
+    Si todos los proveedores fallan, hace un fallback a reglas basadas en expresiones regulares.
     """
     
     def __init__(self):
         # Conectores comunes para el fallback de regex
         self.connectors = r'\b(porque|por tanto|así que|por lo cual|pues|sino|para que|a fin de que|mas|pero|y|o)\b'
-        self.ollama_url = "http://localhost:11434/api/generate"
-        self.model = "llama3.1"
+        from llm.tier_router import TierRouter
+        self.tier_router = TierRouter()
 
     @staticmethod
     def detect_genre(book_name: str) -> str:
@@ -76,8 +75,8 @@ class PropositionalService:
         
     def format_text(self, text: str) -> str:
         """
-        Intenta formatear el texto usando IA local (Ollama). 
-        Si falla o hay timeout, usa regex.
+        Intenta formatear el texto usando TierRouter (prefiere Ollama local → cloud).
+        Si falla todo, usa regex.
         """
         # Limpiar YAML frontmatter si llegara a filtrarse
         if text.startswith("---"):
@@ -98,31 +97,21 @@ Reglas:
 TEXTO A ANALIZAR:
 {text}
 """
-        try:
-            payload = {
-                "model": self.model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.0 # Determinístico
-                }
-            }
-            # Timeout de 25 segundos. Un modelo 8B en local debería procesar un capítulo en ~10-15s
-            response = requests.post(self.ollama_url, json=payload, timeout=25)
-            
-            if response.status_code == 200:
-                result = response.json().get("response", "").strip()
-                # Validación básica de que no haya respondido basura o cortado
-                if result and len(result) > len(text) * 0.5:
-                    return result
-        except Exception as e:
-            print(f"Ollama falló para Análisis Proposicional ({e}). Usando fallback (Regex)...")
+        result = self.tier_router.route(
+            prompt=prompt,
+            module="propositional_format",
+            temperature=0.0,
+        )
+        
+        if result.success and result.content and len(result.content) > len(text) * 0.5:
+            return result.content
             
         return self._format_text_regex(text)
 
     def analyze_with_lens(self, text: str, book_name: str, level: str = "moderado") -> str:
         """
         Análisis Sintáctico-Gramatical profundo con detección de género y andamiaje adaptativo.
+        Usa TierRouter con fallback automático a todos los proveedores.
         
         Args:
             text: El texto bíblico a analizar.
@@ -160,32 +149,16 @@ FORMATO DE SALIDA (Markdown estricto):
 TEXTO A ANALIZAR:
 {text}
 """
-        # Intentar con Ollama primero, luego con Gemini como fallback
-        try:
-            payload = {
-                "model": self.model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.1
-                }
-            }
-            response = requests.post(self.ollama_url, json=payload, timeout=40)
-            
-            if response.status_code == 200:
-                result = response.json().get("response", "").strip()
-                if result and len(result) > 50:
-                    return result
-        except Exception as e:
-            print(f"Ollama falló para Lente Sintáctico ({e}). Intentando con Gemini...")
+        result = self.tier_router.route(
+            prompt=prompt,
+            module="propositional_analysis",
+            temperature=0.1,
+        )
         
-        # Fallback a Gemini vía RAGService._call_llm
-        try:
-            from services.rag_service import RAGService
-            rag = RAGService()
-            return rag._call_llm(prompt)
-        except Exception as e:
-            return f"Error: No se pudo conectar con ningún modelo de IA. Detalle: {str(e)}"
+        if result.success and result.content and len(result.content) > 50:
+            return result.content
+            
+        return f"Error: No se pudo conectar con ningún modelo de IA. Último error: {result.error}"
     
     def _get_genre_instructions(self, genre: str) -> str:
         """Devuelve instrucciones de análisis específicas según el género literario."""

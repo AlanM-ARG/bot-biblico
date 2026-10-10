@@ -55,37 +55,30 @@ def _query_rag(user, question: str, chat_history: list, is_architect_mode: bool 
     """
     rag_svc = RAGService()
 
-    # 1. Retrieve relevant context from ChromaDB
-    query_embedding = rag_svc.encoder.encode([question]).tolist()
-
+    # 1. Recuperar contexto con Cross-Encoder Re-ranking
     try:
-        results = rag_svc.collection.query(
-            query_embeddings=query_embedding,
-            n_results=8
+        context_docs, is_covered, distances = rag_svc._retrieve_with_reranking(
+            question, top_candidates=30, final_top=8
         )
     except Exception as e:
         return f"Error al consultar la base de datos vectorial: {e}"
 
-    if not results['documents'] or not results['documents'][0]:
-        return "No cuento con recursos suficientes en la biblioteca para responder esto con precisión. Te sugiero consultarlo directamente con el liderazgo de la congregación."
+    # Si no hay chunks relevantes, marcamos fallback pero dejamos que el LLM
+    # responda con transparencia (regla de contexto insuficiente, sección 8).
+    is_fallback = not context_docs or not is_covered
 
-    context_docs = results['documents'][0]
-    context_metadatas = results['metadatas'][0] if results['metadatas'] else []
+    # Inyectar subgrafo del Grafo de Conocimiento si existen entidades teológicas en la consulta
+    try:
+        subgraph = rag_svc.graph_service.retrieve_subgraph(question)
+        if subgraph:
+            context_docs.insert(0, subgraph)
+    except Exception:
+        pass
 
-    # 2. Build enriched context with source metadata
+    # 2. Construir contexto enriquecido
     context_parts = []
-    for i, (doc, meta) in enumerate(zip(context_docs, context_metadatas)):
-        source_info = ""
-        tema = meta.get("tema_principal", "")
-        seccion = meta.get("seccion", "")
-        subtema = meta.get("subtema", "")
-        if tema:
-            source_info += f" | Tema: {tema}"
-        if seccion:
-            source_info += f" > {seccion}"
-        if subtema:
-            source_info += f" > {subtema}"
-        context_parts.append(f"[Fragmento {i+1}{source_info}]\n{doc}")
+    for i, doc in enumerate(context_docs):
+        context_parts.append(f"[Fragmento {i+1}]\n{doc}")
 
     context_text = "\n\n---\n\n".join(context_parts)
 
@@ -150,9 +143,10 @@ JERARQUÍA DOCTRINAL (en este orden de autoridad):
 3. Confesiones y credos históricos recuperados (incl. Confesión de 1689) — marco de soporte secundario, nunca contradice al punto 2.
 {reglas_inyeccion}
 {contexto_vital_inyeccion}
-RESTRICCIÓN DE CONOCIMIENTO (Groundedness):
-- Basa tus respuestas ÚNICAMENTE en el contexto proporcionado.
-- Si el contexto recuperado no contiene información suficiente, DEBES responder: "No cuento con recursos suficientes en la biblioteca para responder esto con precisión. Te sugiero consultarlo directamente con el liderazgo de la congregación."
+REGLA DE CONTEXTO INSUFICIENTE (fallback educativo con transparencia total):
+- Basa tus respuestas prioritariamente en el contexto proporcionado.
+- Si el contexto recuperado no contiene información suficiente, NO te niegues: generá el contenido usando conocimiento teológico general ortodoxo/evangélico (nunca posturas liberales, heterodoxas ni "balances" entre posiciones en conflicto). Pero avisá al usuario con una nota de transparencia al inicio: "⚠️ Nota de transparencia: esta respuesta se sustenta parcialmente en teología bíblica ortodoxa general, ya que la biblioteca local no contiene recursos específicos sobre este tema."
+- Si SÍ hay fragmentos reales recuperados (aunque sean parciales), tienen prioridad total — nunca los contradigas.
 - Cita siempre la fuente cuando expliques un concepto (ej. "Según la guía de estudio inductivo...", "Como indica el fragmento sobre Soteriología...").
 
 REGLA DE VERIFICACIÓN DE FUENTE (obligatoria):

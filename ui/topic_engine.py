@@ -37,9 +37,12 @@ def render(user_id: int):
             
         # PDF Export Logic
         from utils.pdf_helper import generar_pdf_desde_markdown
-        pdf_bytes = generar_pdf_desde_markdown(st.session_state['current_study'].content)
-        if pdf_bytes:
-            col1, col2, col3 = st.columns([1, 1, 2])
+        current_study_obj = st.session_state.get('current_study')
+        study_txt = current_study_obj.content if hasattr(current_study_obj, 'content') else str(current_study_obj or "")
+        if study_txt and not study_txt.startswith("Error"):
+            pdf_bytes = generar_pdf_desde_markdown(study_txt)
+            if pdf_bytes:
+                col1, col2, col3 = st.columns([1, 1, 2])
             with col1:
                 st.download_button(
                     label="🖨️ Descargar en PDF",

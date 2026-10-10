@@ -149,16 +149,17 @@ def test_fallback_within_tier(router):
             module="study_guide",
         )
 
-    # Should have tried ollama-local first, then gemini-3.6-flash
+    # Should have tried first configured provider, then second configured provider
+    tier_1_providers = [p["name"] for p in router._get_providers("tier_1_contexto_grande")]
     assert len(providers_called) >= 2, (
         f"Expected at least 2 providers to be tried, but only got: {providers_called}"
     )
-    assert providers_called[0] == "ollama-local"
-    assert providers_called[1] == "gemini-3.6-flash"
+    assert providers_called[0] == tier_1_providers[0]
+    assert providers_called[1] == tier_1_providers[1]
 
     # The second attempt should have succeeded
     assert result.success
-    assert result.provider_name == "gemini-3.6-flash"
+    assert result.provider_name == tier_1_providers[1]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -8,9 +8,11 @@ from models.user import User
 def mock_dependencies():
     with patch('services.rag_service.UserRepository') as MockUserRepo, \
          patch('services.rag_service.CacheAuditRepository') as MockCacheRepo, \
-         patch('services.rag_service.chromadb.EphemeralClient') as MockChroma, \
-         patch('services.rag_service.SentenceTransformer') as MockEncoder:
+         patch('chromadb.EphemeralClient') as MockChroma, \
+         patch('services.rag_service.get_encoder') as MockGetEncoder:
          
+        mock_encoder = MagicMock()
+        MockGetEncoder.return_value = mock_encoder
         mock_user = User(id=1, username="test_user", display_name="Test", study_level="moderado", family_mode=False)
         MockUserRepo.return_value.get_user_by_id.return_value = mock_user
         
@@ -18,7 +20,7 @@ def mock_dependencies():
             "user_repo": MockUserRepo.return_value,
             "cache_repo": MockCacheRepo.return_value,
             "chroma": MockChroma.return_value,
-            "encoder": MockEncoder.return_value,
+            "encoder": mock_encoder,
             "mock_user": mock_user
         }
 

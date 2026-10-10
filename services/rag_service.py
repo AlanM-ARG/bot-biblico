@@ -1,7 +1,5 @@
 import os
 import time
-import chromadb
-from sentence_transformers import SentenceTransformer
 from repositories.user_repository import UserRepository
 from repositories.cache_audit_repository import CacheAuditRepository
 from repositories.resource_repository import ResourceRepository
@@ -9,13 +7,16 @@ from services.rag_logger import RAGLogger, RAGLogEntry, ChunkInfo
 from services.prompt_builder import PromptBuilder
 from models.rag_response import RAGResponse
 from llm.tier_router import TierRouter
+from core.embeddings import get_encoder
+from core.vector_db import get_chroma_client, get_collection
+from services.graph_service import GraphService
 
 class RAGService:
     def __init__(self, use_ephemeral_db=False):
         self.user_repo = UserRepository()
         self.cache_repo = CacheAuditRepository()
         self.resource_repo = ResourceRepository()
-        self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
+        self.encoder = get_encoder()
         self.logger = RAGLogger()
         self.prompt_builder = PromptBuilder()
         self._last_model_used = "unknown"
@@ -23,13 +24,16 @@ class RAGService:
         self._last_providers_attempted = []
         self._last_private_data_flag = False
         self.tier_router = TierRouter()
+        self._retrieval_service = None  # Lazy loading — Cross-Encoder es pesado (~250ms)
+        self.graph_service = GraphService()
+        self._use_ephemeral_db = use_ephemeral_db
         
         if use_ephemeral_db:
+            import chromadb
             self.db_client = chromadb.EphemeralClient()
+            self.collection = self.db_client.get_or_create_collection(name="biblico_collection")
         else:
-            self.db_client = chromadb.PersistentClient(path="vector_db")
-            
-        self.collection = self.db_client.get_or_create_collection(name="biblico_collection")
+            self.collection = get_collection()
         
         # Coverage threshold (ChromaDB L2 distance — lower is more similar)
         self.min_relevance_score = float(os.getenv("RAG_MIN_SCORE", "1.5"))
@@ -48,7 +52,7 @@ class RAGService:
             prompt=prompt,
             module=module,
             temperature=0.3,
-            timeout=30,
+            # timeout=None lets TierRouter use dynamic timeouts per tier
             contains_private_data=contains_private_data,
         )
         
@@ -88,15 +92,119 @@ class RAGService:
             include=["documents", "distances"]
         )
 
+    def _retrieve_and_check_coverage(self, query_text: str, n_results: int = 4,
+                                     log_entry: RAGLogEntry = None) -> tuple:
+        """
+        Recupera fragmentos de ChromaDB con filtro de descarte, registra telemetría de chunks
+        y evalúa si la cobertura temática es suficiente según min_relevance_score.
+
+        Returns:
+            (context_docs, is_covered, distances)
+            donde is_covered es True si hay documentos y al menos uno tiene distancia <= min_relevance_score.
+        """
+        results = self._query_collection_filtered(query_text, n_results=n_results)
+        
+        context_docs = results['documents'][0] if results.get('documents') else []
+        distances = results['distances'][0] if results.get('distances') else []
+        chunk_ids = results['ids'][0] if results.get('ids') else []
+        
+        if log_entry is not None:
+            for i, doc in enumerate(context_docs):
+                log_entry.chunks_retrieved.append({
+                    "chunk_id": chunk_ids[i] if i < len(chunk_ids) else f"chunk_{i}",
+                    "score": distances[i] if i < len(distances) else 0.0,
+                    "snippet": doc[:100] + "..." if len(doc) > 100 else doc,
+                })
+                
+        is_covered = bool(context_docs) and not all(d > self.min_relevance_score for d in distances)
+        if not is_covered and log_entry is not None:
+            log_entry.fallback_no_rag = True
+            
+        return context_docs, is_covered, distances
+
+    def _retrieve_with_reranking(self, query_text: str, log_entry: RAGLogEntry = None,
+                                 top_candidates: int = 50, final_top: int = 15) -> tuple:
+        """
+        Recuperación de alta precisión usando Cross-Encoder re-ranking.
+        Pipeline: Bi-Encoder Top 50 → Cross-Encoder → Feedback Bandit → Top N.
+
+        Mismo contrato que _retrieve_and_check_coverage() para compatibilidad:
+        Returns:
+            (context_docs, is_covered, distances)
+        
+        Si el RetrievalService no está disponible (ej. tests efímeros o
+        modelo Cross-Encoder ausente), cae transparentemente al pipeline
+        bi-encoder clásico.
+        """
+        # No usar re-ranking en modo efímero (tests)
+        if self._use_ephemeral_db:
+            return self._retrieve_and_check_coverage(
+                query_text, n_results=min(final_top, 5), log_entry=log_entry
+            )
+
+        try:
+            # Lazy-load del RetrievalService (carga Cross-Encoder la primera vez)
+            if self._retrieval_service is None:
+                from services.retrieval_service import RetrievalService
+                self._retrieval_service = RetrievalService()
+            
+            candidates = self._retrieval_service.search_and_rerank(
+                query=query_text,
+                top_candidates=top_candidates,
+                final_top=final_top
+            )
+            
+            if not candidates:
+                # Sin resultados del re-ranker → fallback clásico
+                return self._retrieve_and_check_coverage(
+                    query_text, n_results=min(final_top, 5), log_entry=log_entry
+                )
+            
+            # Extraer docs y distancias del formato de RetrievalService
+            context_docs = [c["text"] for c in candidates]
+            distances = [c.get("vector_distance", 1.0) for c in candidates]
+            
+            # Registrar telemetría enriquecida en log_entry
+            if log_entry is not None:
+                for i, c in enumerate(candidates):
+                    chunk_info = {
+                        "chunk_id": c.get("metadata", {}).get("chunk_id", f"reranked_{i}"),
+                        "score": c.get("vector_distance", 0.0),
+                        "snippet": c["text"][:100] + "..." if len(c["text"]) > 100 else c["text"],
+                    }
+                    # Enriquecer con scores de re-ranking cuando disponibles
+                    if "cross_encoder_score" in c:
+                        chunk_info["cross_encoder_score"] = round(c["cross_encoder_score"], 4)
+                    if "adaptive_boost" in c:
+                        chunk_info["adaptive_boost"] = round(c["adaptive_boost"], 4)
+                    if "final_score" in c:
+                        chunk_info["final_score"] = round(c["final_score"], 4)
+                    log_entry.chunks_retrieved.append(chunk_info)
+            
+            # Evaluar cobertura con misma lógica que el pipeline clásico
+            is_covered = bool(context_docs) and not all(
+                d > self.min_relevance_score for d in distances
+            )
+            if not is_covered and log_entry is not None:
+                log_entry.fallback_no_rag = True
+            
+            return context_docs, is_covered, distances
+            
+        except Exception as e:
+            # Cualquier fallo del Cross-Encoder → fallback transparente al bi-encoder
+            print(f"⚠️ Re-ranking no disponible ({e}). Usando bi-encoder clásico.")
+            return self._retrieve_and_check_coverage(
+                query_text, n_results=min(final_top, 5), log_entry=log_entry
+            )
+
     def _process_missing_topics(self, response: RAGResponse):
         """Registers missing topics in the database backlog."""
         if not response.missing_topics:
             return
             
-        import sqlite3
-        from database.connection import DB_PATH
+        from database.connection import get_connection
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_connection()
         cursor = conn.cursor()
         for topic in response.missing_topics:
             tema = topic.get("tema", "Desconocido")
@@ -113,6 +221,61 @@ class RAGService:
         conn.commit()
         conn.close()
 
+    def _record_interaction_and_dispatch_evaluation(
+        self,
+        query: str,
+        response: RAGResponse,
+        module: str,
+        retrieved_chunks: list,
+        log_entry: RAGLogEntry = None
+    ) -> str:
+        """
+        Persiste la interacción en SQLite (rag_interactions) para trazabilidad,
+        asigna interaction_id al RAGResponse y despacha la evaluación asíncrona
+        de calidad (RAGEvaluatorService) en segundo plano.
+        """
+        import uuid
+        interaction_id = str(uuid.uuid4())
+        response.interaction_id = interaction_id
+        if log_entry is not None:
+            log_entry.interaction_id = interaction_id
+
+        if not self._use_ephemeral_db:
+            try:
+                from database.connection import get_connection
+                import json
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR IGNORE INTO rag_interactions (id, query, model_used, module, sources_used)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    interaction_id,
+                    query[:500],
+                    self._last_model_used or "unknown",
+                    module,
+                    json.dumps(response.sources_used, ensure_ascii=False)
+                ))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"⚠️ Error al persistir rag_interactions: {e}")
+
+            if response.content:
+                try:
+                    from services.async_feedback_dispatcher import AsyncFeedbackDispatcher
+                    AsyncFeedbackDispatcher.dispatch_rag_evaluation(
+                        query=query,
+                        response_text=response.content,
+                        retrieved_chunks=retrieved_chunks,
+                        interaction_id=interaction_id,
+                        module=module
+                    )
+                except Exception as e:
+                    print(f"⚠️ Error al despachar evaluación asíncrona: {e}")
+
+        return interaction_id
+
 
     def _build_prompt(self, user, chapter: str, context_docs: list, lens: str = "Ninguno") -> str:
         """Delegates to the centralised PromptBuilder service."""
@@ -124,7 +287,7 @@ class RAGService:
             mode="study_guide",
         )
 
-    def generate_study_guide(self, user_id: int, chapter: str, lens: str = "Ninguno") -> RAGResponse:
+    def generate_study_guide(self, user_id: int, chapter: str, lens: str = "Ninguno", bible_text: str = None) -> RAGResponse:
         """
         Main RAG pipeline with observability, coverage check, and structured output:
         1. Checks cache (lazy loading).
@@ -157,34 +320,26 @@ class RAGService:
         if lens != "Ninguno":
             search_query += f" {lens}"
             
-        results = self._query_collection_filtered(search_query, n_results=4)
+        context_docs, is_covered, distances = self._retrieve_with_reranking(
+            search_query, log_entry=log_entry, top_candidates=50, final_top=15
+        )
         
-        context_docs = results['documents'][0] if results['documents'] else []
-        distances = results['distances'][0] if results.get('distances') else []
-        chunk_ids = results['ids'][0] if results.get('ids') else []
-        
-        # Log chunks retrieved
-        for i, doc in enumerate(context_docs):
-            log_entry.chunks_retrieved.append({
-                "chunk_id": chunk_ids[i] if i < len(chunk_ids) else f"chunk_{i}",
-                "score": distances[i] if i < len(distances) else 0.0,
-                "snippet": doc[:100] + "..." if len(doc) > 100 else doc,
-            })
-        
-        # 3. Coverage check pre-LLM
-        if not context_docs or all(d > self.min_relevance_score for d in distances):
-            log_entry.fallback_no_rag = True
-            log_entry.model_used = "none_coverage_block"
-            log_entry.duration_ms = int((time.time() - start_time) * 1000)
-            self.logger.log(log_entry)
+        # Inyectar sub-grafo de conocimiento si existe
+        subgraph = self.graph_service.retrieve_subgraph(search_query)
+        if subgraph:
+            context_docs.insert(0, subgraph)
             
-            # Doctrinal modules: hard block
-            return RAGResponse(
-                content="No cuento con recursos suficientes en la biblioteca para responder esto con precisión. Te sugiero consultarlo directamente con el liderazgo de la congregación.",
-                sources_used=[],
-                fallback_no_rag=True,
-                recommended_resources=[f"Material sobre {chapter} para el lente {lens}"]
-            )
+        # Inyectar texto bíblico directo si proviene del frontend
+        if bible_text:
+            context_docs.insert(0, f"[TEXTO BÍBLICO COMPLETO DE {chapter}]\n{bible_text}")
+            is_covered = True  # Forzamos cobertura porque tenemos la fuente primaria
+        
+        # 3. Coverage check pre-LLM → fallback educativo (nunca bloquea)
+        # La regla de contexto insuficiente (sección 8 del contexto aplicativo) dicta
+        # que el LLM debe responder con transparencia, marcando fallback_no_rag=True,
+        # no negarse completamente. El prompt ya tiene esa instrucción embebida.
+        if not is_covered:
+            log_entry.fallback_no_rag = True
         
         # 4. Assemble Prompt via PromptBuilder
         prompt = self._build_prompt(user, chapter, context_docs, lens)
@@ -214,6 +369,13 @@ class RAGService:
             
         self.cache_repo.register_guide(guide_key, file_path)
         
+        self._record_interaction_and_dispatch_evaluation(
+            query=chapter,
+            response=response,
+            module="study_guide",
+            retrieved_chunks=context_docs,
+            log_entry=log_entry
+        )
         return response
 
     def generate_topic_study(self, user_id: int, topic: str) -> RAGResponse:
@@ -225,31 +387,17 @@ class RAGService:
         if not user:
             return RAGResponse(content="Error: Usuario no encontrado.")
             
-        results = self._query_collection_filtered(topic, n_results=5)
-        
-        context_docs = results['documents'][0] if results['documents'] else []
-        distances = results['distances'][0] if results.get('distances') else []
-        chunk_ids = results['ids'][0] if results.get('ids') else []
-        
-        for i, doc in enumerate(context_docs):
-            log_entry.chunks_retrieved.append({
-                "chunk_id": chunk_ids[i] if i < len(chunk_ids) else f"chunk_{i}",
-                "score": distances[i] if i < len(distances) else 0.0,
-                "snippet": doc[:100] + "..." if len(doc) > 100 else doc,
-            })
+        context_docs, is_covered, distances = self._retrieve_with_reranking(
+            topic, log_entry=log_entry, top_candidates=50, final_top=15
+        )
             
-        if not context_docs or all(d > self.min_relevance_score for d in distances):
+        # Inyectar sub-grafo de conocimiento si existe
+        subgraph = self.graph_service.retrieve_subgraph(topic)
+        if subgraph:
+            context_docs.insert(0, subgraph)
+            
+        if not is_covered:
             log_entry.fallback_no_rag = True
-            log_entry.model_used = "none_coverage_block"
-            log_entry.duration_ms = int((time.time() - start_time) * 1000)
-            self.logger.log(log_entry)
-            
-            return RAGResponse(
-                content="No cuento con recursos suficientes en la biblioteca para responder esto con precisión. Te sugiero consultarlo directamente con el liderazgo de la congregación.",
-                sources_used=[],
-                fallback_no_rag=True,
-                recommended_resources=[f"Material sobre {topic}"]
-            )
             
         # We reuse prompt_builder but state mode="topic_study"
         prompt = self.prompt_builder.build_system_prompt(
@@ -270,6 +418,13 @@ class RAGService:
         self._populate_log_routing(log_entry)
         self.logger.log(log_entry)
         
+        self._record_interaction_and_dispatch_evaluation(
+            query=topic,
+            response=response,
+            module="topic_study",
+            retrieved_chunks=context_docs,
+            log_entry=log_entry
+        )
         return response
 
     def generate_roadmap(self, user_id: int, topic: str) -> RAGResponse:
@@ -281,22 +436,10 @@ class RAGService:
         if not user:
             return RAGResponse(content='{"error": "Usuario no encontrado"}')
             
-        results = self._query_collection_filtered(topic, n_results=5)
+        context_docs, is_covered, distances = self._retrieve_and_check_coverage(
+            topic, n_results=5, log_entry=log_entry
+        )
         
-        context_docs = results['documents'][0] if results['documents'] else []
-        distances = results['distances'][0] if results.get('distances') else []
-        chunk_ids = results['ids'][0] if results.get('ids') else []
-        
-        for i, doc in enumerate(context_docs):
-            log_entry.chunks_retrieved.append({
-                "chunk_id": chunk_ids[i] if i < len(chunk_ids) else f"chunk_{i}",
-                "score": distances[i] if i < len(distances) else 0.0,
-                "snippet": doc[:100] + "..." if len(doc) > 100 else doc,
-            })
-            
-        if not context_docs or all(d > self.min_relevance_score for d in distances):
-            log_entry.fallback_no_rag = True
-            
         context_text = "\n\n".join(context_docs)
         
         prompt = f"""Actúa como un diseñador de currículo teológico pastoral. 
@@ -337,6 +480,13 @@ El bloque de código markdown dentro de "content" DEBE tener exactamente esta es
         self._populate_log_routing(log_entry)
         self.logger.log(log_entry)
         
+        self._record_interaction_and_dispatch_evaluation(
+            query=topic,
+            response=response,
+            module="roadmap_generator",
+            retrieved_chunks=context_docs,
+            log_entry=log_entry
+        )
         return response
 
     def generate_family_devotional(self, user_id: int, chapter: str, exegesis_text: str = "") -> RAGResponse:
@@ -387,6 +537,13 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
         self._populate_log_routing(log_entry)
         self.logger.log(log_entry)
         
+        self._record_interaction_and_dispatch_evaluation(
+            query=chapter,
+            response=response,
+            module="family_devotional",
+            retrieved_chunks=[exegesis_text] if exegesis_text else [],
+            log_entry=log_entry
+        )
         return response
 
     def generate_life_alert(self, user_id: int, struggle_text: str) -> RAGResponse:
@@ -398,36 +555,12 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
         if not user:
             return RAGResponse(content="Error: Usuario no encontrado.")
             
-        query_embedding = self.encoder.encode([struggle_text]).tolist()
-        results = self.collection.query(
-            query_embeddings=query_embedding,
-            n_results=4,
-            include=["documents", "distances"]
+        context_docs, is_covered, distances = self._retrieve_with_reranking(
+            struggle_text, log_entry=log_entry, top_candidates=50, final_top=10
         )
-        
-        context_docs = results['documents'][0] if results['documents'] else []
-        distances = results['distances'][0] if results.get('distances') else []
-        chunk_ids = results['ids'][0] if results.get('ids') else []
-        
-        for i, doc in enumerate(context_docs):
-            log_entry.chunks_retrieved.append({
-                "chunk_id": chunk_ids[i] if i < len(chunk_ids) else f"chunk_{i}",
-                "score": distances[i] if i < len(distances) else 0.0,
-                "snippet": doc[:100] + "..." if len(doc) > 100 else doc,
-            })
             
-        if not context_docs or all(d > self.min_relevance_score for d in distances):
+        if not is_covered:
             log_entry.fallback_no_rag = True
-            log_entry.model_used = "none_coverage_block"
-            log_entry.duration_ms = int((time.time() - start_time) * 1000)
-            self.logger.log(log_entry)
-            
-            return RAGResponse(
-                content="No cuento con recursos suficientes en la biblioteca para aconsejar sobre esto con precisión pastoral. Te sugiero consultarlo directamente con el liderazgo de la congregación.",
-                sources_used=[],
-                fallback_no_rag=True,
-                recommended_resources=["Material sobre consejería bíblica para este tema"]
-            )
             
         context_text = "\n\n".join(context_docs)
         
@@ -461,6 +594,13 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
         self._populate_log_routing(log_entry)
         self.logger.log(log_entry)
         
+        self._record_interaction_and_dispatch_evaluation(
+            query=struggle_text,
+            response=response,
+            module="life_alert",
+            retrieved_chunks=context_docs,
+            log_entry=log_entry
+        )
         return response
 
     def generate_hermeneutic_challenge(self, user_id: int, chapter: str) -> RAGResponse:
@@ -470,27 +610,10 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
         
         # Query for hermeneutic rules, poetry, epistles, inductive method
         search_query = f"{chapter} método inductivo hermenéutica"
-        query_embedding = self.encoder.encode([search_query]).tolist()
-        results = self.collection.query(
-            query_embeddings=query_embedding,
-            n_results=3,
-            include=["documents", "distances"]
+        context_docs, is_covered, distances = self._retrieve_and_check_coverage(
+            search_query, n_results=3, log_entry=log_entry
         )
         
-        context_docs = results['documents'][0] if results['documents'] else []
-        distances = results['distances'][0] if results.get('distances') else []
-        chunk_ids = results['ids'][0] if results.get('ids') else []
-        
-        for i, doc in enumerate(context_docs):
-            log_entry.chunks_retrieved.append({
-                "chunk_id": chunk_ids[i] if i < len(chunk_ids) else f"chunk_{i}",
-                "score": distances[i] if i < len(distances) else 0.0,
-                "snippet": doc[:100] + "..." if len(doc) > 100 else doc,
-            })
-            
-        if not context_docs or all(d > self.min_relevance_score for d in distances):
-            log_entry.fallback_no_rag = True
-            
         context_text = "\n\n".join(context_docs)
 
         prompt = f"""Actúa como un Profesor de Hermenéutica y Exégesis Bíblica de un seminario reformado.
@@ -524,6 +647,13 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
         self._populate_log_routing(log_entry)
         self.logger.log(log_entry)
         
+        self._record_interaction_and_dispatch_evaluation(
+            query=chapter,
+            response=response,
+            module="hermeneutic_challenge",
+            retrieved_chunks=context_docs,
+            log_entry=log_entry
+        )
         return response
         
     def evaluate_hermeneutic_answer(self, user_id: int, chapter: str, challenge: str, user_answer: str) -> RAGResponse:
@@ -532,26 +662,10 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
         log_entry = RAGLogEntry(module="hermeneutic_evaluation", query=f"{chapter} | Answer: {user_answer}")
         
         search_query = f"{chapter} método inductivo hermenéutica"
-        query_embedding = self.encoder.encode([search_query]).tolist()
-        results = self.collection.query(
-            query_embeddings=query_embedding,
-            n_results=3,
-            include=["documents", "distances"]
+        context_docs, is_covered, distances = self._retrieve_and_check_coverage(
+            search_query, n_results=3, log_entry=log_entry
         )
-        context_docs = results['documents'][0] if results['documents'] else []
-        distances = results['distances'][0] if results.get('distances') else []
-        chunk_ids = results['ids'][0] if results.get('ids') else []
         
-        for i, doc in enumerate(context_docs):
-            log_entry.chunks_retrieved.append({
-                "chunk_id": chunk_ids[i] if i < len(chunk_ids) else f"chunk_{i}",
-                "score": distances[i] if i < len(distances) else 0.0,
-                "snippet": doc[:100] + "..." if len(doc) > 100 else doc,
-            })
-            
-        if not context_docs or all(d > self.min_relevance_score for d in distances):
-            log_entry.fallback_no_rag = True
-            
         context_text = "\n\n".join(context_docs)
 
         prompt = f"""Actúa como un Profesor de Hermenéutica y Exégesis Bíblica de un seminario reformado.
@@ -586,6 +700,13 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
         self._populate_log_routing(log_entry)
         self.logger.log(log_entry)
         
+        self._record_interaction_and_dispatch_evaluation(
+            query=f"{chapter} | Answer: {user_answer}",
+            response=response,
+            module="hermeneutic_evaluation",
+            retrieved_chunks=context_docs,
+            log_entry=log_entry
+        )
         return response
 
     def chat_evangelism_roleplay(self, user_id: int, scenario: str, chat_history: list) -> str:
@@ -626,26 +747,10 @@ Responde al último mensaje como el personaje.
         history_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in chat_history])
         
         search_query = "evangelismo apologética alcanzar"
-        query_embedding = self.encoder.encode([search_query]).tolist()
-        results = self.collection.query(
-            query_embeddings=query_embedding,
-            n_results=4,
-            include=["documents", "distances"]
+        context_docs, is_covered, distances = self._retrieve_and_check_coverage(
+            search_query, n_results=4, log_entry=log_entry
         )
-        context_docs = results['documents'][0] if results['documents'] else []
-        distances = results['distances'][0] if results.get('distances') else []
-        chunk_ids = results['ids'][0] if results.get('ids') else []
         
-        for i, doc in enumerate(context_docs):
-            log_entry.chunks_retrieved.append({
-                "chunk_id": chunk_ids[i] if i < len(chunk_ids) else f"chunk_{i}",
-                "score": distances[i] if i < len(distances) else 0.0,
-                "snippet": doc[:100] + "..." if len(doc) > 100 else doc,
-            })
-            
-        if not context_docs or all(d > self.min_relevance_score for d in distances):
-            log_entry.fallback_no_rag = True
-            
         context_text = "\n\n".join(context_docs)
 
         prompt = f"""Actúa como un pastor reformado experto en apologética y evangelización evaluando a un discípulo.
@@ -692,8 +797,9 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
             return RAGResponse(content="Error: Usuario no encontrado.")
             
         search_query = chapter if chapter else exercise_type
-        results = self._query_collection_filtered(search_query, n_results=3)
-        context_docs = results['documents'][0] if results.get('documents') else []
+        context_docs, is_covered, distances = self._retrieve_and_check_coverage(
+            search_query, n_results=3, log_entry=log_entry
+        )
         
         prompt = self.prompt_builder.build_system_prompt(
             user=user,
@@ -711,6 +817,14 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
         log_entry.duration_ms = int((time.time() - start_time) * 1000)
         self._populate_log_routing(log_entry)
         self.logger.log(log_entry)
+        
+        self._record_interaction_and_dispatch_evaluation(
+            query=f"{chapter} {exercise_type}",
+            response=response,
+            module="gym_exercise",
+            retrieved_chunks=context_docs,
+            log_entry=log_entry
+        )
         return response
 
     def evaluate_gym_answer(self, user_id: int, exercise_type: str, exercise_context: str, user_answer: str) -> RAGResponse:
@@ -738,6 +852,14 @@ Responde SIEMPRE como un JSON válido con esta forma exacta:
         log_entry.duration_ms = int((time.time() - start_time) * 1000)
         self._populate_log_routing(log_entry)
         self.logger.log(log_entry)
+        
+        self._record_interaction_and_dispatch_evaluation(
+            query=f"{exercise_type} evaluation: {user_answer}",
+            response=response,
+            module="gym_evaluation",
+            retrieved_chunks=context_docs,
+            log_entry=log_entry
+        )
         return response
 
     def generate_exegetical_panel(self, verse: str, raw_resources: str) -> str:
@@ -771,9 +893,9 @@ REGLAS DE FORMATO Y CLASIFICACIÓN OBLIGATORIAS:
     def draft_missing_resource(self, user_id: int, tema: str, motivo: str, tipo: str) -> str:
         """Genera automáticamente una guía para un tema del backlog usando el LLM (Tier 1)."""
         import os
-        import sqlite3
+        import re
         import time
-        from database.connection import DB_PATH
+        from database.connection import get_connection
         from services.etl_processor import sincronizar_nuevos_archivos
         
         start_time = time.time()
@@ -807,7 +929,6 @@ INSTRUCCIONES OBLIGATORIAS:
         file_path = os.path.join("estudios_generados", filename)
         
         # Extraer markdown si viene en block de codigo
-        import re
         if "```markdown" in raw_response:
             match = re.search(r"```markdown(.*?)```", raw_response, re.DOTALL)
             if match:
@@ -824,7 +945,7 @@ INSTRUCCIONES OBLIGATORIAS:
             
         # Marcar en BD como completado
         try:
-            conn = sqlite3.connect(DB_PATH)
+            conn = get_connection()
             cursor = conn.cursor()
             cursor.execute("UPDATE temas_pendientes SET estado = 'Completado' WHERE tema_o_libro = ?", (tema,))
             conn.commit()

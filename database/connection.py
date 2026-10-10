@@ -1,7 +1,10 @@
 import sqlite3
 import os
+from dotenv import load_dotenv
 
-DB_PATH = 'biblico.db'
+load_dotenv()
+
+DB_PATH = os.environ.get('SQLITE_DB_PATH', 'biblico.db')
 
 def get_connection():
     """Returns a connection to the SQLite/LibSQL database."""
@@ -76,6 +79,14 @@ def _migrate_existing_tables(cursor):
     # --- journal_entries table migrations ---
     if _table_exists(cursor, 'journal_entries'):
         _add_column_if_missing(cursor, 'journal_entries', 'created_at', 'TIMESTAMP')
+
+    # --- temas_pendientes table migrations ---
+    if _table_exists(cursor, 'temas_pendientes'):
+        _add_column_if_missing(cursor, 'temas_pendientes', 'prioridad', "TEXT DEFAULT 'Media'")
+
+    # --- feedback_beta table migrations ---
+    if _table_exists(cursor, 'feedback_beta'):
+        _add_column_if_missing(cursor, 'feedback_beta', 'procesado', "INTEGER DEFAULT 0")
 
 
 def init_db():
@@ -246,6 +257,100 @@ def init_db():
             status      TEXT DEFAULT 'pendiente',
             created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+
+    # =========================================================================
+    # AUDITORÍA DOCTRINAL, RAG INTERACTION TRACEABILITY & FEEDBACK BETA
+    # =========================================================================
+
+    # 1. Inventario de Documentos (El Filtro Sanitario)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS document_audit (
+            id TEXT PRIMARY KEY,
+            filename TEXT NOT NULL,
+            estado TEXT DEFAULT '[Pendiente]',
+            fecha_ingesta DATETIME DEFAULT CURRENT_TIMESTAMP,
+            fecha_auditoria DATETIME,
+            fallos_doctrinales_reportados INTEGER DEFAULT 0
+        )
+    ''')
+
+    # 2. Trazabilidad de Consultas RAG
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS rag_interactions (
+            id TEXT PRIMARY KEY,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            query TEXT,
+            model_used TEXT,
+            module TEXT,
+            sources_used TEXT
+        )
+    ''')
+
+    # 3. Retroalimentación del Usuario
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS feedback_beta (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            interaction_id TEXT,
+            rating INTEGER,
+            motivo TEXT,
+            comentario_libre TEXT,
+            procesado INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(interaction_id) REFERENCES rag_interactions(id)
+        )
+    ''')
+
+    # 4. Configuración del Sistema (Optimizaciones ML / Trading / Flags)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # 5. Evaluaciones de Calidad RAG (RAGAS: Fidelidad, Relevancia y Auto-Backlog)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS rag_evaluations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            interaction_id TEXT,
+            query TEXT,
+            faithfulness REAL,
+            context_relevancy REAL,
+            answer_relevancy REAL,
+            low_fidelity_flag BOOLEAN DEFAULT 0,
+            backlog_ticket_id INTEGER,
+            evaluated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(interaction_id) REFERENCES rag_interactions(id),
+            FOREIGN KEY(backlog_ticket_id) REFERENCES temas_pendientes(id)
+        )
+    ''')
+
+    # =========================================================================
+    # GRAPHRAG - GRAFO DE CONOCIMIENTO SEMÁNTICO
+    # =========================================================================
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS graph_nodes (
+            id TEXT PRIMARY KEY,
+            entity_name TEXT NOT NULL UNIQUE,
+            entity_type TEXT NOT NULL,
+            description TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS graph_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_entity TEXT NOT NULL,
+            target_entity TEXT NOT NULL,
+            relationship TEXT NOT NULL,
+            resource_id INTEGER,
+            chunk_id TEXT,
+            FOREIGN KEY(source_entity) REFERENCES graph_nodes(entity_name),
+            FOREIGN KEY(target_entity) REFERENCES graph_nodes(entity_name)
         )
     ''')
 

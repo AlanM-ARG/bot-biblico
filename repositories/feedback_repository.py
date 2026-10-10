@@ -1,10 +1,11 @@
 from database.connection import get_connection
-from models.feedback import Feedback
+from models.feedback import Feedback, FeedbackBeta
 from typing import Optional, List
 
 class FeedbackRepository:
     """Repository for the Beta feedback module.
-    Captures user suggestions, bug reports, and constructive criticism.
+    Captures user suggestions, bug reports, and constructive criticism,
+    as well as granular RAG response evaluations in feedback_beta.
     """
 
     def create(self, feedback: Feedback) -> Feedback:
@@ -21,6 +22,34 @@ class FeedbackRepository:
         except Exception as e:
             conn.rollback()
             raise e
+        finally:
+            conn.close()
+
+    def create_beta(self, feedback: FeedbackBeta) -> FeedbackBeta:
+        """Saves granular rating on a RAG interaction."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO feedback_beta (interaction_id, rating, motivo, comentario_libre, procesado)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (feedback.interaction_id, feedback.rating, feedback.motivo, feedback.comentario_libre, feedback.procesado))
+            conn.commit()
+            feedback.id = cursor.lastrowid
+            return feedback
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+
+    def mark_beta_processed(self, feedback_id: int) -> None:
+        """Marks a feedback_beta row as processed to maintain idempotency."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("UPDATE feedback_beta SET procesado = 1 WHERE id = ?", (feedback_id,))
+            conn.commit()
         finally:
             conn.close()
 

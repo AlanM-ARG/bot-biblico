@@ -147,9 +147,19 @@ def render(user_id: int):
                             st.warning("Selecciona un capítulo en el panel de lectura.")
                 else:
                     if st.button("Generar Estudio de este Capítulo"):
+                        bible_text = ""
+                        if selected_file:
+                            file_path = os.path.join(bibles_dir, selected_file)
+                            with open(file_path, "r", encoding="utf-8") as f:
+                                bible_text = f.read()
+                                if bible_text.startswith("---"):
+                                    parts = bible_text.split("---", 2)
+                                    if len(parts) >= 3:
+                                        bible_text = parts[2].strip()
+
                         with st.spinner(f"Consultando la base doctrinal con {lente_seleccionado} para {capitulo_str}..."):
                             rag = RAGService()
-                            guia = rag.generate_study_guide(user_id, capitulo_str, lens=lente_seleccionado)
+                            guia = rag.generate_study_guide(user_id, capitulo_str, lens=lente_seleccionado, bible_text=bible_text)
                             st.session_state[cache_key_exegesis] = guia
                         st.success("Estudio cargado exitosamente.")
                     
@@ -159,19 +169,22 @@ def render(user_id: int):
                     
                     # PDF Export Logic
                     from utils.pdf_helper import generar_pdf_desde_markdown
-                    pdf_bytes = generar_pdf_desde_markdown(st.session_state[cache_key_exegesis].content)
-                    if pdf_bytes:
-                        st.write("") # spacing
-                        col_pdf, _ = st.columns([1, 2])
-                        with col_pdf:
-                            st.download_button(
-                                label="🖨️ Descargar en PDF",
-                                data=pdf_bytes,
-                                file_name=f"guia_estudio_{capitulo_str.replace(' ', '_').lower()}.pdf",
-                                mime="application/pdf",
-                                type="primary",
-                                key="btn_pdf_guia"
-                            )
+                    exegesis_obj = st.session_state[cache_key_exegesis]
+                    exegesis_txt = exegesis_obj.content if hasattr(exegesis_obj, "content") else str(exegesis_obj or "")
+                    if exegesis_txt and not exegesis_txt.startswith("Error"):
+                        pdf_bytes = generar_pdf_desde_markdown(exegesis_txt)
+                        if pdf_bytes:
+                            st.write("") # spacing
+                            col_pdf, _ = st.columns([1, 2])
+                            with col_pdf:
+                                st.download_button(
+                                    label="🖨️ Descargar en PDF",
+                                    data=pdf_bytes,
+                                    file_name=f"guia_estudio_{capitulo_str.replace(' ', '_').lower()}.pdf",
+                                    mime="application/pdf",
+                                    type="primary",
+                                    key="btn_pdf_guia"
+                                )
             else:
                 st.warning("Selecciona un capítulo primero.")
                 
@@ -281,18 +294,21 @@ def render(user_id: int):
                         
                     # PDF Export Logic
                     from utils.pdf_helper import generar_pdf_desde_markdown
-                    pdf_bytes = generar_pdf_desde_markdown(st.session_state[f"devocional_{capitulo_str}"].content)
-                    if pdf_bytes:
-                        st.write("")
-                        col_pdf, _ = st.columns([1, 2])
-                        with col_pdf:
-                            st.download_button(
-                                label="🖨️ Descargar Devocional en PDF",
-                                data=pdf_bytes,
-                                file_name=f"devocional_familiar_{capitulo_str.replace(' ', '_').lower()}.pdf",
-                                mime="application/pdf",
-                                type="primary",
-                                key=f"btn_pdf_devocional_{capitulo_str}"
-                            )
+                    devocional_obj = st.session_state[f"devocional_{capitulo_str}"]
+                    devocional_txt = devocional_obj.content if hasattr(devocional_obj, "content") else str(devocional_obj or "")
+                    if devocional_txt and not devocional_txt.startswith("Error"):
+                        pdf_bytes = generar_pdf_desde_markdown(devocional_txt)
+                        if pdf_bytes:
+                            st.write("")
+                            col_pdf, _ = st.columns([1, 2])
+                            with col_pdf:
+                                st.download_button(
+                                    label="🖨️ Descargar Devocional en PDF",
+                                    data=pdf_bytes,
+                                    file_name=f"devocional_familiar_{capitulo_str.replace(' ', '_').lower()}.pdf",
+                                    mime="application/pdf",
+                                    type="primary",
+                                    key=f"btn_pdf_devocional_{capitulo_str}"
+                                )
             else:
                 st.warning("Selecciona un capítulo primero.")

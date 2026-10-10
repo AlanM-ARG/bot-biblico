@@ -1,1 +1,1 @@
-powershell -ExecutionPolicy Bypass -File .\run_app.ps1
+powershell -ExecutionPolicy Bypass -File .\start_full_stack.ps1

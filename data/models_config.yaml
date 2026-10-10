@@ -1,14 +1,13 @@
 tiers:
   tier_1_contexto_grande:
-    description: "Guías de estudio, Orquestador de Lentes, Topic Engine, contexto RAG completo"
+    description: "Guías de estudio, Orquestador de Lentes, Topic Engine, RAG profundo y Auditoría Doctrinal (Tier S y A)"
     providers:
-      # - name: "ollama-local"
-      #   type: "openai_compatible"
-      #   base_url: "http://localhost:11434/v1"
-      #   api_key_env: "DUMMY_KEY_LOCAL"
-      #   model: "llama3.1"
-      #   max_context_tokens: 1000000
-      #   is_aggregator: false
+      - name: "gemini-3.7-flash"
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model: "gemini-3.7-flash"
+        max_context_tokens: 1000000
+        is_aggregator: false
 
       - name: "gemini-3.6-flash"
         type: "gemini"
@@ -17,23 +16,37 @@ tiers:
         max_context_tokens: 1000000
         is_aggregator: false
 
-      - name: "gemini-3.7-flash"
+      - name: "gemini-3.8-flash"
         type: "gemini"
         api_key_env: "GEMINI_API_KEY"
-        model: "gemini-3.7-flash"
+        model: "gemini-3.8-flash"
         max_context_tokens: 1000000
         is_aggregator: false
 
-      # - name: "eden-ai-gemma4"
-      #   type: "eden_ai"
-      #   api_key_env: "EDEN_AI_API_KEY"
-      #   model: "google/gemma-4"
-      #   max_context_tokens: 8192
-      #   is_aggregator: true
+      - name: "gemini-3.1-pro-preview"
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model: "gemini-3.1-pro-preview"
+        max_context_tokens: 1000000
+        is_aggregator: false
 
   tier_2_disponibilidad:
-    description: "Conversacionales cortos, Evangelismo, Hermenéutico, bajo contexto"
+    description: "Conversacionales cortos, Evangelismo, Hermenéutico, chats estándar (Tier B + Proveedores Cloud)"
     providers:
+      - name: "gemini-3.5-flash"
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model: "gemini-3.5-flash"
+        max_context_tokens: 1000000
+        is_aggregator: false
+
+      - name: "gemini-flash-latest"
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model: "gemini-flash-latest"
+        max_context_tokens: 1000000
+        is_aggregator: false
+
       - name: "groq-gpt-oss-120b"
         type: "openai_compatible"
         base_url: "https://api.groq.com/openai/v1"
@@ -46,7 +59,7 @@ tiers:
         type: "openai_compatible"
         base_url: "https://api.groq.com/openai/v1"
         api_key_env: "GROQ_API_KEY"
-        model: "qwen/qwen3.6-27b"
+        model: "qwen/qwen3.8-27b"
         max_context_tokens: 131000
         is_aggregator: false
 
@@ -91,14 +104,27 @@ tiers:
         is_aggregator: true
 
   tier_3_tareas_cortas:
-    description: "SOLO prompts <8K tokens: clasificación ETL, resúmenes de una línea"
+    description: "Clasificación ETL, resúmenes cortos, etiquetado y filtros sintácticos (Tier C y D + Cerebras)"
     providers:
-      - name: "ollama-local"
-        type: "openai_compatible"
-        base_url: "http://localhost:11434/v1"
-        api_key_env: "DUMMY_KEY_LOCAL"
-        model: "llama3.1"
-        max_context_tokens: 8000
+      - name: "gemini-3.5-flash-lite"
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model: "gemini-3.5-flash-lite"
+        max_context_tokens: 1000000
+        is_aggregator: false
+
+      - name: "gemini-3.1-flash-lite"
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model: "gemini-3.1-flash-lite"
+        max_context_tokens: 1000000
+        is_aggregator: false
+
+      - name: "gemini-flash-lite-latest"
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model: "gemini-flash-lite-latest"
+        max_context_tokens: 1000000
         is_aggregator: false
 
       - name: "cerebras"
@@ -138,8 +164,9 @@ task_tier_map:
   roadmap_generator: "tier_1_contexto_grande"
   family_devotional: "tier_1_contexto_grande"
   life_alert: "tier_1_contexto_grande"
-  propositional_analysis: "tier_1_contexto_grande"
   exegetical_panel: "tier_1_contexto_grande"
+  propositional_analysis: "tier_4_local"
+  propositional_format: "tier_4_local"
   chat_evangelism: "tier_2_disponibilidad"
   evaluate_evangelism: "tier_2_disponibilidad"
   hermeneutic_challenge: "tier_2_disponibilidad"

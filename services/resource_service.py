@@ -130,8 +130,8 @@ class ResourceService:
                 
             content_sample = content[:15000] 
             
-            from services.rag_service import RAGService
-            rag = RAGService()
+            from llm.tier_router import TierRouter
+            router = TierRouter()
             
             prompt = f"""Analiza el siguiente texto de un manual de estudio bíblico o recurso teológico.
 Extrae explícitamente las "Reglas Hermenéuticas", "Pasos Metodológicos" o "Preguntas Inductivas" que el autor propone para estudiar la Biblia.
@@ -141,8 +141,10 @@ Si no hay reglas explícitas o claras, devuelve []. No uses markdown de bloques 
 Texto:
 {content_sample}
 """
-            response = rag._call_llm(prompt, module="etl_classify")
-            response = response.replace("```json", "").replace("```", "").strip()
+            result = router.route(prompt=prompt, module="etl_classify", temperature=0.1)
+            if not result.success or not result.content:
+                return
+            response = result.content.replace("```json", "").replace("```", "").strip()
             
             new_rules = json.loads(response)
             

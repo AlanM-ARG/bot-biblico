@@ -12,6 +12,9 @@ import logging
 from typing import Optional
 
 import yaml
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from llm.llm_client import UnifiedLLMClient, LLMCallResult
 
