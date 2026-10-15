@@ -1,0 +1,819 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Teos AI - API Bíblica",
+    "description": "Backend REST API para Teos AI: orquestación de RAG teológico, estudios inductivos/exegéticos, auditoría doctrinal histórica (Confesión de Fe Bautista de Londres 1689), backlog automático y exportación de documentos a PDF. Estandarizado para generación de frontend React en Google AI Studio.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "General"
+        ],
+        "summary": "Información de la API",
+        "description": "Retorna el estado general de la API e hipervínculos a la documentación técnica y OpenAPI.",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "General"
+        ],
+        "summary": "Verificación de Salud del Sistema",
+        "description": "Comprueba el estado de la conexión a la base de datos SQLite y métricas básicas de registros.",
+        "operationId": "health_check_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/estudio": {
+      "post": {
+        "tags": [
+          "Estudios Bíblicos"
+        ],
+        "summary": "Canalizar Consulta de Estudio Bíblico",
+        "description": "Canaliza la consulta al orquestador LLM actual. Soporta estudios exegéticos por versículo/capítulo y estudios temáticos de doctrinas. Ajusta el andamiaje (scaffolding) al nivel de profundidad solicitado (básico, inductivo o pastoral).",
+        "operationId": "generar_estudio_api_estudio_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstudioRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RAGResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auditoria": {
+      "get": {
+        "tags": [
+          "Biblioteca y Auditoría"
+        ],
+        "summary": "Listar Registros de Auditoría Doctrinal",
+        "description": "Consulta la tabla 'auditoria_libros' en SQLite para obtener las obras teológicas y su veredicto doctrinal según la Confesión Bautista de 1689 (Alineado, Precaución, Descartar, Pendiente).",
+        "operationId": "obtener_auditoria_api_auditoria_get",
+        "parameters": [
+          {
+            "name": "estado",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EstadoRevisionEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filtrar por estado de revisión doctrinal: 'Alineado', 'Precaución', 'Descartar', 'Pendiente'",
+              "title": "Estado"
+            },
+            "description": "Filtrar por estado de revisión doctrinal: 'Alineado', 'Precaución', 'Descartar', 'Pendiente'"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Buscar coincidencias en título o autor del libro",
+              "title": "Search"
+            },
+            "description": "Buscar coincidencias en título o autor del libro"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "description": "Cantidad máxima de registros a retornar",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Cantidad máxima de registros a retornar"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Desplazamiento para paginación de resultados",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Desplazamiento para paginación de resultados"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditoriaItem"
+                  },
+                  "title": "Response Obtener Auditoria Api Auditoria Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backlog": {
+      "get": {
+        "tags": [
+          "Biblioteca y Auditoría"
+        ],
+        "summary": "Listar Tickets de Vacíos Bibliográficos (Backlog)",
+        "description": "Consulta la tabla 'temas_pendientes' en SQLite donde el motor RAG registra proactivamente los vacíos de información o carencias documentales detectadas durante las consultas.",
+        "operationId": "obtener_backlog_api_backlog_get",
+        "parameters": [
+          {
+            "name": "estado",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filtrar por estado del ticket (ej. 'Pendiente', 'Completado')",
+              "title": "Estado"
+            },
+            "description": "Filtrar por estado del ticket (ej. 'Pendiente', 'Completado')"
+          },
+          {
+            "name": "prioridad",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filtrar por prioridad (ej. 'Alta', 'Media', 'Baja')",
+              "title": "Prioridad"
+            },
+            "description": "Filtrar por prioridad (ej. 'Alta', 'Media', 'Baja')"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "description": "Cantidad máxima de tickets a retornar",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Cantidad máxima de tickets a retornar"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Desplazamiento para paginación",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Desplazamiento para paginación"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BacklogItem"
+                  },
+                  "title": "Response Obtener Backlog Api Backlog Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exportar-pdf": {
+      "post": {
+        "tags": [
+          "Exportación y Reportes"
+        ],
+        "summary": "Exportar Markdown a Documento PDF",
+        "description": "Recibe un contenido en formato Markdown y reutiliza la biblioteca xhtml2pdf para retornar directamente los bytes del archivo PDF listo para imprimir o descargar.",
+        "operationId": "exportar_pdf_api_exportar_pdf_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportarPdfRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Archivo binario PDF generado listo para visualización o descarga.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/pdf": {}
+            }
+          },
+          "400": {
+            "description": "El texto provisto no pudo ser transformado a PDF."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuditoriaItem": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Identificador único del registro de auditoría en la base de datos"
+          },
+          "titulo": {
+            "type": "string",
+            "title": "Titulo",
+            "description": "Título de la obra, libro o recurso teológico"
+          },
+          "autor": {
+            "type": "string",
+            "title": "Autor",
+            "description": "Autor o autores de la obra"
+          },
+          "estado": {
+            "$ref": "#/components/schemas/EstadoRevisionEnum",
+            "description": "Estado de alineación doctrinal según el filtro histórico de la Confesión de Fe de 1689: 'Alineado', 'Precaución', 'Descartar', 'Pendiente'"
+          },
+          "justificacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Justificacion",
+            "description": "Justificación doctrinal del veredicto emitida por el Agente Auditor"
+          },
+          "estado_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estado Revision",
+            "description": "Estado técnico del procesamiento (ej. 'Auditado y Vectorizado', 'Esperando Archivo PDF')"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id",
+            "description": "ID del recurso en la tabla resources si ya fue incorporado a la biblioteca"
+          }
+        },
+        "type": "object",
+        "required": [
+          "titulo",
+          "autor",
+          "estado"
+        ],
+        "title": "AuditoriaItem",
+        "description": "DTO para representar un libro o documento auditado teológicamente.\nRefleja los registros de la tabla 'auditoria_libros' en SQLite.",
+        "example": {
+          "autor": "Juan Calvino",
+          "estado": "Alineado",
+          "estado_revision": "Auditado y Vectorizado",
+          "id": 1,
+          "justificacion": "Completamente alineado con la soteriología reformada y la Confesión de 1689.",
+          "resource_id": 10,
+          "titulo": "Institución de la Religión Cristiana"
+        }
+      },
+      "BacklogItem": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Identificador único del ticket en temas_pendientes"
+          },
+          "tema_o_libro": {
+            "type": "string",
+            "title": "Tema O Libro",
+            "description": "Tema o libro bíblico detectado con carencia de fuentes teológicas"
+          },
+          "motivo_necesidad": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo Necesidad",
+            "description": "Explicación teológica del vacío de información detectado"
+          },
+          "tipo_recurso_requerido": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Recurso Requerido",
+            "description": "Tipo de recurso sugerido para adquisición o redacción (ej. Comentario, Monografía)"
+          },
+          "estado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estado",
+            "description": "Estado del ticket: 'Pendiente', 'En Proceso' o 'Completado'",
+            "default": "Pendiente"
+          },
+          "prioridad": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prioridad",
+            "description": "Prioridad de adquisición: 'Alta', 'Media' o 'Baja'",
+            "default": "Media"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At",
+            "description": "Fecha y hora de registro del ticket en la base de datos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tema_o_libro"
+        ],
+        "title": "BacklogItem",
+        "description": "DTO para representar un ticket del backlog automático detectado por la IA.\nRefleja los registros de la tabla 'temas_pendientes' en SQLite.",
+        "example": {
+          "created_at": "2026-10-15 01:00:00",
+          "estado": "Pendiente",
+          "id": 1,
+          "motivo_necesidad": "Vacío bibliográfico detectado durante consulta exegética del usuario",
+          "prioridad": "Alta",
+          "tema_o_libro": "Comentario a 2 Tesalonicenses 1",
+          "tipo_recurso_requerido": "Comentario expositivo reformado"
+        }
+      },
+      "EstadoRevisionEnum": {
+        "type": "string",
+        "enum": [
+          "Alineado",
+          "Precaución",
+          "Descartar",
+          "Pendiente"
+        ],
+        "title": "EstadoRevisionEnum",
+        "description": "Estado doctrinal del libro evaluado según la Confesión Bautista de Londres de 1689."
+      },
+      "EstudioRequest": {
+        "properties": {
+          "tema_o_versiculo": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tema O Versiculo",
+            "description": "Tema a investigar (ej. 'La Justificación por la Fe') o pasaje/versículo bíblico (ej. 'Romanos 8', 'Gálatas 2:20')"
+          },
+          "tipo_estudio": {
+            "$ref": "#/components/schemas/TipoEstudio",
+            "description": "Tipo de estudio: 'exegetico' (analiza un pasaje/capítulo) o 'tematico' (analiza una doctrina o tema a través de las fuentes)",
+            "default": "exegetico"
+          },
+          "nivel_profundidad": {
+            "$ref": "#/components/schemas/NivelProfundidad",
+            "description": "Nivel de profundidad hermenéutica: 'basico' (principiante), 'inductivo' (moderado, método NBEI) o 'pastoral' (complejo, análisis exhaustivo)",
+            "default": "inductivo"
+          },
+          "lente": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lente",
+            "description": "Lente interpretativo: 'Ninguno', 'Lente Inductivo', 'Lente Eclesiológico 9Marcas', 'Lente Histórico', '🔬 Lente Sintáctico-Gramatical'",
+            "default": "Ninguno"
+          },
+          "texto_biblico": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texto Biblico",
+            "description": "Texto bíblico completo opcional correspondiente al pasaje para alimentar el RAG con fuente primaria directa"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id",
+            "description": "ID del usuario en la base de datos para recuperar preferencias y registrar observabilidad",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "tema_o_versiculo"
+        ],
+        "title": "EstudioRequest",
+        "description": "DTO para solicitar la generación de un estudio bíblico (exegético o temático).\nCanaliza la consulta al orquestador LLM / RAG.",
+        "example": {
+          "lente": "Lente Inductivo",
+          "nivel_profundidad": "inductivo",
+          "tema_o_versiculo": "Romanos 8:28-30",
+          "texto_biblico": "Y sabemos que a los que aman a Dios, todas las cosas les ayudan a bien...",
+          "tipo_estudio": "exegetico",
+          "user_id": 1
+        }
+      },
+      "ExportarPdfRequest": {
+        "properties": {
+          "contenido_markdown": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Contenido Markdown",
+            "description": "Contenido en formato Markdown que se compilará a documento PDF profesional"
+          },
+          "titulo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Titulo",
+            "description": "Nombre sugerido para el archivo PDF descargable (sin extensión .pdf)",
+            "default": "estudio_biblico"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contenido_markdown"
+        ],
+        "title": "ExportarPdfRequest",
+        "description": "DTO para solicitar la exportación de un estudio o texto Markdown a formato PDF imprimible.\nReutiliza la lógica de xhtml2pdf.",
+        "example": {
+          "contenido_markdown": "# Estudio Exegético: Romanos 8\n\n## 1. Observación\n\nTexto de observación...",
+          "titulo": "estudio_romanos_8"
+        }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Estado general de la API ('ok')",
+            "default": "ok"
+          },
+          "database": {
+            "type": "string",
+            "title": "Database",
+            "description": "Estado de la base de datos SQLite / LibSQL"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Versión de la API",
+            "default": "1.0.0"
+          },
+          "total_libros_auditados": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Libros Auditados",
+            "description": "Cantidad de libros en auditoría"
+          },
+          "total_backlog": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Backlog",
+            "description": "Cantidad de temas en backlog"
+          }
+        },
+        "type": "object",
+        "required": [
+          "database"
+        ],
+        "title": "HealthResponse",
+        "description": "DTO para el estado del servidor y conexiones."
+      },
+      "NivelProfundidad": {
+        "type": "string",
+        "enum": [
+          "basico",
+          "inductivo",
+          "pastoral"
+        ],
+        "title": "NivelProfundidad",
+        "description": "Nivel de profundidad hermenéutica del estudio (Scaffolding)."
+      },
+      "RAGResponse": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Contenido principal del estudio o respuesta en formato Markdown enriquecido",
+            "default": ""
+          },
+          "sources_used": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources Used",
+            "description": "Lista de fuentes teológicas y bíblicas verificadas efectivamente utilizadas"
+          },
+          "fallback_no_rag": {
+            "type": "boolean",
+            "title": "Fallback No Rag",
+            "description": "Indica si la respuesta usó conocimiento teológico general por falta de fuentes suficientes en la biblioteca local",
+            "default": false
+          },
+          "recommended_resources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recommended Resources",
+            "description": "Recursos o temas recomendados para indexar a futuro cuando fallback_no_rag es True"
+          },
+          "missing_topics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Topics",
+            "description": "Sugerencias de adquisición de temas o tópicos faltantes detectados durante la consulta"
+          },
+          "interaction_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interaction Id",
+            "description": "Identificador único UUID de la interacción para feedback, observabilidad y evaluación automática"
+          }
+        },
+        "type": "object",
+        "title": "RAGResponse",
+        "description": "Typed model and Data Transfer Object (DTO) for structured output from the RAG / LLM orchestrator.\nMatches the FORMATO DE SALIDA ESTRUCTURADA defined in contexto_aplicativo_biblico.md (section 8)."
+      },
+      "TipoEstudio": {
+        "type": "string",
+        "enum": [
+          "exegetico",
+          "tematico"
+        ],
+        "title": "TipoEstudio",
+        "description": "Tipos de estudio bíblico soportados por el motor RAG."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

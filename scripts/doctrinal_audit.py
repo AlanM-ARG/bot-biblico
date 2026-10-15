@@ -74,7 +74,7 @@ class LiteLLMAuditClient:
         try:
             import httpx
             payload = {
-                "model": "ollama-local",
+                "model": "tier1-largo",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}

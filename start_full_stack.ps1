@@ -11,6 +11,7 @@ param(
     [switch]$SkipDocker,
     [switch]$SkipLiteLLM,
     [switch]$SkipAudit,
+    [switch]$SkipApi,
     [switch]$OnlyApp,
     [int]$AuditLimit = 5,
     [switch]$AuditAll
@@ -212,6 +213,24 @@ if (-not $SkipAudit -and -not $OnlyApp) {
 }
 
 # =====================================================================
+#  FASE 1.8 – Backend API REST FastAPI (localhost:8000)
+# =====================================================================
+if (-not $SkipApi -and -not $OnlyApp) {
+    Write-Phase "1.8" "Backend API REST FastAPI (localhost:8000)"
+    
+    $apiLogFile = Join-Path $PSScriptRoot "logs\api_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+    $apiJob = Start-Process -FilePath "python" `
+        -ArgumentList "server.py --port 8000" `
+        -PassThru -WindowStyle Minimized `
+        -RedirectStandardOutput $apiLogFile `
+        -RedirectStandardError "$apiLogFile.err"
+    
+    Write-Host "  [OK] Backend FastAPI iniciado en segundo plano (PID: $($apiJob.Id))" -ForegroundColor Green
+    Write-Host "       Swagger UI : http://localhost:8000/docs" -ForegroundColor Cyan
+    Write-Host "       OpenAPI    : http://localhost:8000/openapi.json" -ForegroundColor Cyan
+}
+
+# =====================================================================
 #  FASE 2 – Aplicacion Web Streamlit (localhost:8502)
 # =====================================================================
 Write-Phase 2 "Aplicacion Web Teos AI (Streamlit)"
@@ -224,6 +243,9 @@ Write-Host "  RESUMEN DE SERVICIOS ACTIVOS:" -ForegroundColor Yellow
 Write-Host "    * Langfuse Dashboard    -> http://localhost:3000" -ForegroundColor White
 Write-Host "    * LiteLLM Proxy         -> http://localhost:4000/v1" -ForegroundColor White
 Write-Host "    * Teos AI (Streamlit)   -> http://localhost:8502" -ForegroundColor White
+if (-not $SkipApi -and -not $OnlyApp) {
+    Write-Host "    * FastAPI Backend REST  -> http://localhost:8000 (Swagger: /docs)" -ForegroundColor White
+}
 if (-not $SkipAudit -and -not $OnlyApp) {
     Write-Host "    * Auditoria Doctrinal   -> corriendo en segundo plano" -ForegroundColor White
 }
@@ -231,4 +253,5 @@ Write-Host ("=" * 65) -ForegroundColor Cyan
 Write-Host ""
 
 python -m streamlit run app.py --server.port 8502 --server.address 0.0.0.0
+
 

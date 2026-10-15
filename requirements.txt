@@ -25,3 +25,7 @@ mlflow>=2.14.0
 openpyxl>=3.1.2
 ragas>=0.2.0
 langfuse>=2.0.0,<3.0.0
+fastapi>=0.115.0
+uvicorn>=0.30.0
+xhtml2pdf>=0.2.15
+markdown>=3.6.0

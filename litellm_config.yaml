@@ -104,6 +104,8 @@ router_settings:
     - gemini-pro: ["gemini-3.5-flash", "gemini-3.1-pro-preview", "groq-gpt-120b", "groq-qwen-27b", "ollama-local"]
     - gemini-flash: ["gemini-3.5-flash", "groq-gpt-120b", "ollama-local"]
     - tier1-largo: ["gemini-3.5-flash", "gemini-3.1-pro-preview", "groq-gpt-120b", "ollama-local"]
+    - tier2-rapido: ["gemini-flash-latest", "gemini-3.5-flash", "groq-gpt-120b", "ollama-local"]
+    - tier3-corto: ["gemini-3.1-flash-lite", "gemini-flash-lite-latest", "ollama-local"]
 
 general_settings:
   master_key: "sk-litellm-master-key"

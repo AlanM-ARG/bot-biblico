@@ -113,15 +113,24 @@ class TierRouter:
         is_private = contains_private_data or self._is_private_module(module)
 
         # 3. Define tier progression
-        tier_progression = [
-            "tier_1_contexto_grande",
-            "tier_2_disponibilidad",
-            "tier_3_tareas_cortas",
-            "escalon_casi_gratis",
-            "tier_4_local"
-        ]
-        
-        start_idx = tier_progression.index(tier_name) if tier_name in tier_progression else 0
+        if tier_name == "tier_4_local":
+            tier_progression = [
+                "tier_4_local",
+                "tier_1_contexto_grande",
+                "tier_2_disponibilidad",
+                "tier_3_tareas_cortas",
+                "escalon_casi_gratis",
+            ]
+            start_idx = 0
+        else:
+            tier_progression = [
+                "tier_1_contexto_grande",
+                "tier_2_disponibilidad",
+                "tier_3_tareas_cortas",
+                "escalon_casi_gratis",
+                "tier_4_local",
+            ]
+            start_idx = tier_progression.index(tier_name) if tier_name in tier_progression else 0
 
         # 4. Estimate tokens
         total_text = prompt + (system_prompt or "")
@@ -145,7 +154,7 @@ class TierRouter:
                 if current_tier == "tier_1_contexto_grande":
                     effective_timeout = 180
                 elif current_tier == "tier_4_local":
-                    effective_timeout = 300  # Local models can be very slow
+                    effective_timeout = 60  # Local models: timeout razonable para no congelar la UI
                 else:
                     effective_timeout = 90
             result = self._try_providers(
@@ -224,10 +233,10 @@ class TierRouter:
                 )
                 continue
 
-            # Override timeout for local models which can be extremely slow on large inputs
+            # Override timeout for local models: limit to max 90s to avoid freezing the system
             actual_timeout = timeout
-            if provider_name == "ollama-local" and actual_timeout < 600:
-                actual_timeout = 600
+            if provider_name == "ollama-local" and (actual_timeout is None or actual_timeout > 90):
+                actual_timeout = 90
 
             # Attempt the call
             result = self._client.call(

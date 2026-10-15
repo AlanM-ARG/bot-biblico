@@ -1,23 +1,46 @@
-from dataclasses import dataclass, field
-from typing import Optional
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, List
 import json
+import re
 
 
-@dataclass
-class RAGResponse:
+class RAGResponse(BaseModel):
     """
-    Typed model for the structured JSON output from the LLM.
+    Typed model and Data Transfer Object (DTO) for structured output from the RAG / LLM orchestrator.
     Matches the FORMATO DE SALIDA ESTRUCTURADA defined in contexto_aplicativo_biblico.md (section 8).
     """
-    content: str = ""
-    sources_used: list = field(default_factory=list)
-    fallback_no_rag: bool = False
-    recommended_resources: list = field(default_factory=list)
-    missing_topics: list = field(default_factory=list)
-    interaction_id: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    @staticmethod
-    def parse(raw_text: str, query_topic: str = None) -> 'RAGResponse':
+    content: str = Field(
+        default="",
+        description="Contenido principal del estudio o respuesta en formato Markdown enriquecido"
+    )
+    sources_used: List[str] = Field(
+        default_factory=list,
+        description="Lista de fuentes teológicas y bíblicas verificadas efectivamente utilizadas"
+    )
+    fallback_no_rag: bool = Field(
+        default=False,
+        description="Indica si la respuesta usó conocimiento teológico general por falta de fuentes suficientes en la biblioteca local"
+    )
+    recommended_resources: List[str] = Field(
+        default_factory=list,
+        description="Recursos o temas recomendados para indexar a futuro cuando fallback_no_rag es True"
+    )
+    missing_topics: List[str] = Field(
+        default_factory=list,
+        description="Sugerencias de adquisición de temas o tópicos faltantes detectados durante la consulta"
+    )
+    interaction_id: Optional[str] = Field(
+        default=None,
+        description="Identificador único UUID de la interacción para feedback, observabilidad y evaluación automática"
+    )
+
+    def __init__(self, content: str = "", **data):
+        super().__init__(content=content, **data)
+
+    @classmethod
+    def parse(cls, raw_text: str, query_topic: str = None) -> 'RAGResponse':
         """
         Defensive parser: tries to extract a RAGResponse from LLM output.
         
@@ -27,14 +50,14 @@ class RAGResponse:
         3. Plain text fallback (wraps text as content, marks parse failure)
         """
         if not raw_text or not raw_text.strip():
-            return RAGResponse(content="No se recibió respuesta del modelo.")
+            return cls(content="No se recibió respuesta del modelo.")
 
         text = raw_text.strip()
 
         # Attempt 1: Direct JSON parse
         try:
             data = json.loads(text)
-            return RAGResponse._from_dict(data, query_topic)
+            return cls._from_dict(data, query_topic)
         except (json.JSONDecodeError, ValueError):
             pass
 
@@ -45,9 +68,10 @@ class RAGResponse:
                 end = text.index("```", start)
                 json_str = text[start:end].strip()
                 data = json.loads(json_str)
-                return RAGResponse._from_dict(data, query_topic)
+                return cls._from_dict(data, query_topic)
             except (ValueError, json.JSONDecodeError):
                 pass
+
         # Attempt 3: Extract from ``` ... ``` block (without json tag)
         if "```" in text:
             try:
@@ -55,7 +79,7 @@ class RAGResponse:
                 end = text.index("```", start)
                 json_str = text[start:end].strip()
                 data = json.loads(json_str)
-                return RAGResponse._from_dict(data, query_topic)
+                return cls._from_dict(data, query_topic)
             except (ValueError, json.JSONDecodeError):
                 pass
 
@@ -66,12 +90,11 @@ class RAGResponse:
             try:
                 json_str = text[first_brace:last_brace + 1]
                 data = json.loads(json_str)
-                return RAGResponse._from_dict(data, query_topic)
+                return cls._from_dict(data, query_topic)
             except (json.JSONDecodeError, ValueError):
                 pass
                 
         # Attempt 5: Regex extraction for malformed JSON with literal newlines
-        import re
         content_match = re.search(r'"content"\s*:\s*"(.*)"\s*,\s*"sources_used"', text, re.DOTALL)
         if content_match:
             try:
@@ -91,7 +114,7 @@ class RAGResponse:
                 if rec_match:
                     rec_resources = re.findall(r'"([^"]*)"', rec_match.group(1))
                     
-                return RAGResponse._from_dict({
+                return cls._from_dict({
                     "content": extracted_content,
                     "sources_used": sources,
                     "fallback_no_rag": fallback,
@@ -100,27 +123,16 @@ class RAGResponse:
             except Exception:
                 pass
 
-        # Attempt 4: Find first { and last } and try to parse
-        first_brace = text.find("{")
-        last_brace = text.rfind("}")
-        if first_brace != -1 and last_brace > first_brace:
-            try:
-                json_str = text[first_brace:last_brace + 1]
-                data = json.loads(json_str)
-                return RAGResponse._from_dict(data, query_topic)
-            except (json.JSONDecodeError, ValueError):
-                pass
-
         # Fallback: treat entire text as content (the LLM didn't follow JSON format)
-        return RAGResponse(
+        return cls(
             content=text,
             sources_used=[],
             fallback_no_rag=False,
             recommended_resources=[]
         )
 
-    @staticmethod
-    def _from_dict(data: dict, query_topic: str = None) -> 'RAGResponse':
+    @classmethod
+    def _from_dict(cls, data: dict, query_topic: str = None) -> 'RAGResponse':
         """Safely construct a RAGResponse from a dict, tolerating missing keys and applying validation."""
         content = data.get("content", "")
         sources_used = data.get("sources_used", [])
@@ -137,7 +149,7 @@ class RAGResponse:
             if len(sources_used) == 1 and sources_used[0].strip().lower() == query_topic.strip().lower():
                 fallback_no_rag = True
                 
-        return RAGResponse(
+        return cls(
             content=content,
             sources_used=sources_used,
             fallback_no_rag=fallback_no_rag,
@@ -145,3 +157,4 @@ class RAGResponse:
             missing_topics=missing_topics,
             interaction_id=interaction_id
         )
+
